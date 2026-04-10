@@ -35,7 +35,7 @@
 ## 1. Architecture Overview
 
 The pipeline is a **single-pass, frame-sequential loop** implemented in
-`conceptgraph/slam/vlm_run/batch_vlm_mapping_api.py`. For each sampled frame
+`semgraph/slam/vlm_run/batch_vlm_mapping_api.py`. For each sampled frame
 (controlled by `stride`), it runs segmentation, captioning, feature
 extraction, and 3D merging before advancing to the next frame. All stages
 execute within the same Python process and share GPU VRAM.
@@ -71,7 +71,7 @@ The pipeline supports two **segmentation backends**, controlled by the
 
 **Entry point:** `batch_vlm_mapping_api.py::main()` via Hydra.
 
-**Config file:** `conceptgraph/hydra_configs/batch_vlm_mapping_api.yaml`,
+**Config file:** `semgraph/hydra_configs/batch_vlm_mapping_api.yaml`,
 which composes from `base.yaml`, `base_mapping.yaml`, `replica.yaml` (or
 dataset override), `sam.yaml`, `classes.yaml`, `logging_level.yaml`, and
 `prompts_standard.yaml`.
@@ -161,7 +161,7 @@ Frame N (RGB + Depth + Pose + Intrinsics)
 
 ## 3. Stage 0 — Dataset Loading
 
-**Code:** `conceptgraph/dataset/datasets_common.py::get_dataset()`
+**Code:** `semgraph/dataset/datasets_common.py::get_dataset()`
 
 **What it does:**
 Loads a NICE-SLAM / GradSLAM-format dataset from disk. Returns a PyTorch
@@ -266,7 +266,7 @@ Use this mode for controlled benchmark reproduction where the class list is know
 
 ## 5. Stage 2 — Filtering & Mask Processing
 
-**Code:** `conceptgraph/slam/utils.py::filter_gobs()` (lines 838–906), `resize_gobs()` (lines 909–936), `mask_subtract_contained()` in `conceptgraph/utils/ious.py` (line 453+)
+**Code:** `semgraph/slam/utils.py::filter_gobs()` (lines 838–906), `resize_gobs()` (lines 909–936), `mask_subtract_contained()` in `semgraph/utils/ious.py` (line 453+)
 
 **What it does:**
 
@@ -373,7 +373,7 @@ If `extract_vlm_encoder_feats: True`, the VLM's own vision encoder is also used 
 
 ## 8. Stage 5 — Depth Unprojection & Point Cloud Construction
 
-**Code:** `conceptgraph/slam/utils.py::detections_to_obj_pcd_and_bbox()` (lines 1241–1319), `init_process_pcd()` (line 237), `get_bounding_box()` (line 264)
+**Code:** `semgraph/slam/utils.py::detections_to_obj_pcd_and_bbox()` (lines 1241–1319), `init_process_pcd()` (line 237), `get_bounding_box()` (line 264)
 
 **What it does:**
 
@@ -419,7 +419,7 @@ Detections with fewer than `min_points_threshold` (16) valid depth pixels, or wh
 
 ## 9. Stage 6 — Object Matching & Merging (3D Map Building)
 
-**Code:** `conceptgraph/slam/mapping.py` (all functions)
+**Code:** `semgraph/slam/mapping.py` (all functions)
 
 **What it does:**
 
@@ -489,7 +489,7 @@ After matching, `process_edges()` maps VLM-inferred relation tuples to object in
 
 ## 10. Stage 7 — Periodic Maintenance (Denoise / Filter / Merge-Overlap)
 
-**Code:** `conceptgraph/slam/utils.py`: `denoise_objects()` (line 658), `filter_objects()` (line 700), `merge_objects()` (line 728)
+**Code:** `semgraph/slam/utils.py`: `denoise_objects()` (line 658), `filter_objects()` (line 700), `merge_objects()` (line 728)
 
 These run at configurable intervals during the loop AND always on the final frame.
 
@@ -534,7 +534,7 @@ If an object has no captions, its `consolidated_caption` is set to its YOLO `cla
 
 ## 12. Stage 9 — Final Serialization & Output
 
-**Code:** `conceptgraph/utils/general_utils.py`: `save_pointcloud()`, `save_obj_json()`, `save_edge_json()`
+**Code:** `semgraph/utils/general_utils.py`: `save_pointcloud()`, `save_obj_json()`, `save_edge_json()`
 
 ### Output artifacts:
 
@@ -778,7 +778,7 @@ Only the first 20 captions per object are sent for consolidation. For objects se
 ### What was removed
 
 `pytorch3d` was eliminated as a dependency. It was used in exactly one file
-(`conceptgraph/utils/ious.py`) in four functions, all of which called
+(`semgraph/utils/ious.py`) in four functions, all of which called
 `pytorch3d.ops.box3d_overlap()` — a CUDA kernel that computes exact
 intersection volume between oriented 3D bounding boxes (OBBs) by clipping one
 box against the planes of the other.
@@ -871,10 +871,10 @@ each bounding box, which Open3D computes from any point cloud.
 
 | File | Change |
 |------|--------|
-| `conceptgraph/utils/ious.py` | Rewrote 4 functions to use AABB fallbacks |
-| `conceptgraph/hydra_configs/base_mapping.yaml` | `spatial_sim_type: overlap` → `iou` |
+| `semgraph/utils/ious.py` | Rewrote 4 functions to use AABB fallbacks |
+| `semgraph/hydra_configs/base_mapping.yaml` | `spatial_sim_type: overlap` → `iou` |
 | `pyproject.toml` | Removed `pytorch3d` from dependencies, build config, and sources |
 
 ---
 
-*End of document. For implementation details of the staged pipeline v2 enhancements (encoder sweep, VLM caption sweep, edge construction, HPSG), see the implementation files in `conceptgraph/slam/vlm_run/`.*
+*End of document. For implementation details of the staged pipeline v2 enhancements (encoder sweep, VLM caption sweep, edge construction, HPSG), see the implementation files in `semgraph/slam/vlm_run/`.*

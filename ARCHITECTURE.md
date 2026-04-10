@@ -77,7 +77,7 @@ Each backend passes mode-specific data to `lift_to_3d()` via the `extra` dict on
 
 ## The RawGobs Schema
 
-Defined in `conceptgraph/stages/paths.py::RawGobs` (TypedDict, 14 keys). See that file for the canonical field list with types and shapes.
+Defined in `semgraph/stages/paths.py::RawGobs` (TypedDict, 14 keys). See that file for the canonical field list with types and shapes.
 
 **Producer/consumer mapping:**
 

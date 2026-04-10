@@ -1,4 +1,4 @@
-## Mapping Workflow (based on `conceptgraph/slam/batch_test_local.py`)
+## Mapping Workflow (based on `semgraph/slam/batch_test_local.py`)
 
 run_slam_rgb.py → generate_gsa_results.py → cfslam_pipeline_batch.py
 
@@ -213,10 +213,10 @@ plays in the overall mapping pipeline.
 
 ## Imported Helper Functions & Utilities
 
-The script relies heavily on utilities from `conceptgraph.utils` and `conceptgraph.slam`. Below is a
+The script relies heavily on utilities from `semgraph.utils` and `semgraph.slam`. Below is a
 function-by-function reference for the helpers it calls, grouped by module.
 
-### A. `conceptgraph.utils.general_utils`
+### A. `semgraph.utils.general_utils`
 
 | Function | Inputs (plain English) | Outputs | Role in workflow |
 | --- | --- | --- | --- |
@@ -236,20 +236,20 @@ function-by-function reference for the helpers it calls, grouped by module.
 | `cfg_to_dict(cfg)` | Hydra config object | Plain Python dictionary with only serializable types | Needed for logging configs to WandB and writing them to disk |
 | `check_run_detections(force_detection, det_exp_path)` | Boolean toggle and the detections folder path | Boolean: run detections or reuse cache | Determines whether YOLO/SAM should run this time or whether cached detections suffice |
 
-### B. `conceptgraph.utils.vlm`
+### B. `semgraph.utils.vlm`
 
 | Function | Inputs | Outputs | Role |
 | --- | --- | --- | --- |
 | `get_openai_client()` | Reads `OPENAI_API_KEY` from env | OpenAI client object | Used once per run when VLM edges/captions are enabled |
 | `consolidate_captions(openai_client, captions)` | OpenAI client plus up to 20 short captions collected for a single object | A single summarized caption string | Post-processing step that collapses per-frame captions into one human-readable description |
 
-### C. `conceptgraph.utils.logging_metrics`
+### C. `semgraph.utils.logging_metrics`
 
 | Function/Class | Inputs | Outputs | Role |
 | --- | --- | --- | --- |
 | `MappingTracker()` | None | Object with counters (total detections/objects) | Simplifies logging of cumulative statistics to the console and WandB |
 
-### D. `conceptgraph.slam.utils`
+### D. `semgraph.slam.utils`
 
 These helpers focus on processing detections, point clouds, and map maintenance.
 
@@ -266,7 +266,7 @@ These helpers focus on processing detections, point clouds, and map maintenance.
 | `get_bounding_box(spatial_sim_type, pcd)` | Spatial-similarity mode and the detection’s point cloud | 3D bounding box object | Provides geometric envelopes used during matching and visualization |
 | `denoise_objects(...)`, `merge_objects(...)`, `process_edges(...)`, `processing_needed(...)` | Various combinations of objects, configuration thresholds, and frame counters | Updated objects/edges | These functions implement the maintenance chores executed every N frames (denoise, merge, edge cleanup) so the map doesn’t degrade over time |
 
-### E. `conceptgraph.slam.mapping`
+### E. `semgraph.slam.mapping`
 
 | Function | Inputs | Outputs | Role |
 | --- | --- | --- | --- |

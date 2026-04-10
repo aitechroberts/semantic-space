@@ -1,4 +1,4 @@
-"""Unit tests for stages/io.py — serialization, deserialization, file I/O."""
+"""Unit tests for semgraph.io — serialization, deserialization, file I/O."""
 
 import tempfile
 from pathlib import Path
@@ -13,7 +13,7 @@ class TestSerializeDeserializeRoundtrip:
     def test_axis_aligned_bbox_roundtrip(self):
         import open3d as o3d
         import torch
-        from conceptgraph.stages.io import serialize_detection, deserialize_detection
+        from semgraph.io import serialize_detection, deserialize_detection
 
         pcd = o3d.geometry.PointCloud()
         pts = np.random.randn(100, 3)
@@ -62,7 +62,7 @@ class TestSerializeDeserializeRoundtrip:
     def test_oriented_bbox_roundtrip(self):
         import open3d as o3d
         import torch
-        from conceptgraph.stages.io import serialize_detection, deserialize_detection
+        from semgraph.io import serialize_detection, deserialize_detection
 
         pcd = o3d.geometry.PointCloud()
         pts = np.random.randn(50, 3) + [1, 2, 3]
@@ -93,8 +93,8 @@ class TestSaveLoadRawDet:
     """Test save/load roundtrip for raw detection metadata."""
 
     def test_roundtrip(self):
-        from conceptgraph.stages.io import save_raw_det, load_raw_det
-        from conceptgraph.stages.paths import make_empty_gobs
+        from semgraph.io import save_raw_det, load_raw_det
+        from semgraph.stages.paths import make_empty_gobs
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir)
@@ -107,7 +107,7 @@ class TestSaveLoadRawDet:
             assert len(loaded["captions"]) == 5
 
     def test_missing_file_returns_none(self):
-        from conceptgraph.stages.io import load_raw_det
+        from semgraph.io import load_raw_det
 
         with tempfile.TemporaryDirectory() as tmpdir:
             result = load_raw_det(Path(tmpdir), 999)
@@ -118,30 +118,28 @@ class TestSaveLoadFrameData:
     """Test save/load roundtrip for processed frame data."""
 
     def test_roundtrip(self):
-        from conceptgraph.stages.io import save_frame_data, load_frame_data
-        from conceptgraph.stages.paths import FrameDataRecord, SerializedDetection
+        from semgraph.io import save_frame_data, load_frame_data, FrameDataRecord
+        from semgraph.io.records import _DetectionMeta
 
         record = FrameDataRecord(
             frame_idx=10,
             color_path="/some/path.png",
             skip_matching=False,
             surviving_indices=np.array([0, 2, 5], dtype=np.int32),
-            detections=[
-                SerializedDetection(
-                    pcd_points=np.random.randn(20, 3),
-                    pcd_colors=np.random.rand(20, 3),
-                    bbox_corners=np.random.randn(8, 3),
+            pcd_points_list=[np.random.randn(20, 3)],
+            pcd_colors_list=[np.random.rand(20, 3)],
+            bbox_corners=np.random.randn(1, 8, 3),
+            det_meta=[
+                _DetectionMeta(
                     bbox_type="axis_aligned",
-                    clip_ft=np.random.randn(512).astype(np.float32),
-                    text_ft=np.random.randn(512).astype(np.float32),
-                    vlm_vit_ft=None,
-                    vlm_proj_ft=None,
                     class_name="object",
                     class_id=0,
                     inst_id=0,
                     n_points=20,
                 ),
             ],
+            clip_ft=np.random.randn(1, 512).astype(np.float32),
+            text_ft=np.random.randn(1, 512).astype(np.float32),
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -150,18 +148,18 @@ class TestSaveLoadFrameData:
 
             loaded = load_frame_data(path, 10)
             assert loaded is not None
-            assert loaded["frame_idx"] == 10
-            assert loaded["color_path"] == "/some/path.png"
-            assert len(loaded["detections"]) == 1
-            np.testing.assert_array_equal(loaded["surviving_indices"], np.array([0, 2, 5]))
+            assert loaded.frame_idx == 10
+            assert loaded.color_path == "/some/path.png"
+            assert loaded.n_detections == 1
+            np.testing.assert_array_equal(loaded.surviving_indices, np.array([0, 2, 5]))
 
 
 class TestListFrameIndices:
     """Test frame index discovery."""
 
     def test_discovers_indices(self):
-        from conceptgraph.stages.io import save_raw_det, list_frame_indices
-        from conceptgraph.stages.paths import make_empty_gobs
+        from semgraph.io import save_raw_det, list_frame_indices
+        from semgraph.stages.paths import make_empty_gobs
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir)
@@ -172,7 +170,7 @@ class TestListFrameIndices:
             assert indices == [1, 5, 10]
 
     def test_empty_dir(self):
-        from conceptgraph.stages.io import list_frame_indices
+        from semgraph.io import list_frame_indices
 
         with tempfile.TemporaryDirectory() as tmpdir:
             indices = list_frame_indices(Path(tmpdir))

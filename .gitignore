@@ -1,8 +1,8 @@
 README_private.md
-conceptgraph/outputs
-conceptgraph/scripts/wandb
-conceptgraph/results
-conceptgraph/tmp
+semgraph/outputs
+semgraph/scripts/wandb
+semgraph/results
+semgraph/tmp
 manipulation/contact_graspnet/examples
 manipulation/contact_graspnet/test_data
 manipulation/contact_graspnet/checkpoints
@@ -10,6 +10,7 @@ manipulation/dataset
 env_vars.bash
 *.bash.template
 .cursor/
+.vscode/
 td.json
 .env
 .terraform/

@@ -8,7 +8,7 @@ class TestProjectPointsToFrame:
     """Tests for projection.project_points_to_frame."""
 
     def test_point_in_front_of_camera(self):
-        from conceptgraph.slam.geometry.projection import project_points_to_frame
+        from semgraph.slam.geometry.projection import project_points_to_frame
 
         K = np.array([[500, 0, 320], [0, 500, 240], [0, 0, 1]], dtype=np.float64)
         pose_c2w = np.eye(4)
@@ -20,7 +20,7 @@ class TestProjectPointsToFrame:
         np.testing.assert_allclose(coords[0], [320.0, 240.0], atol=1e-6)
 
     def test_point_behind_camera(self):
-        from conceptgraph.slam.geometry.projection import project_points_to_frame
+        from semgraph.slam.geometry.projection import project_points_to_frame
 
         K = np.array([[500, 0, 320], [0, 500, 240], [0, 0, 1]], dtype=np.float64)
         pose_c2w = np.eye(4)
@@ -30,7 +30,7 @@ class TestProjectPointsToFrame:
         assert not valid[0], "Point behind camera should be invalid"
 
     def test_point_out_of_bounds(self):
-        from conceptgraph.slam.geometry.projection import project_points_to_frame
+        from semgraph.slam.geometry.projection import project_points_to_frame
 
         K = np.array([[500, 0, 320], [0, 500, 240], [0, 0, 1]], dtype=np.float64)
         pose_c2w = np.eye(4)
@@ -40,7 +40,7 @@ class TestProjectPointsToFrame:
         assert not valid[0], "Point projecting outside image bounds should be invalid"
 
     def test_multiple_points(self):
-        from conceptgraph.slam.geometry.projection import project_points_to_frame
+        from semgraph.slam.geometry.projection import project_points_to_frame
 
         K = np.array([[500, 0, 320], [0, 500, 240], [0, 0, 1]], dtype=np.float64)
         pose_c2w = np.eye(4)
@@ -54,7 +54,7 @@ class TestProjectPointsToFrame:
         assert valid[0] and not valid[1] and valid[2]
 
     def test_rotated_camera(self):
-        from conceptgraph.slam.geometry.projection import project_points_to_frame
+        from semgraph.slam.geometry.projection import project_points_to_frame
 
         K = np.array([[500, 0, 320], [0, 500, 240], [0, 0, 1]], dtype=np.float64)
         pose_c2w = np.eye(4)
@@ -69,7 +69,7 @@ class TestSelectBestViews:
     """Tests for projection.select_best_views."""
 
     def test_basic_ranking(self):
-        from conceptgraph.slam.geometry.projection import select_best_views
+        from semgraph.slam.geometry.projection import select_best_views
 
         K = np.array([[500, 0, 320], [0, 500, 240], [0, 0, 1]], dtype=np.float64)
         points = np.random.randn(200, 3)
@@ -86,7 +86,7 @@ class TestSelectBestViews:
         assert len(result) >= 1, "Should find at least one view with visible points"
 
     def test_no_views_pass_threshold(self):
-        from conceptgraph.slam.geometry.projection import select_best_views
+        from semgraph.slam.geometry.projection import select_best_views
 
         K = np.array([[500, 0, 320], [0, 500, 240], [0, 0, 1]], dtype=np.float64)
         points = np.array([[0.0, 0.0, 5.0]])
@@ -100,14 +100,14 @@ class TestMakeEmptyGobs:
     """Tests for paths.make_empty_gobs."""
 
     def test_has_all_keys(self):
-        from conceptgraph.stages.paths import RawGobs, make_empty_gobs
+        from semgraph.stages.paths import RawGobs, make_empty_gobs
 
         gobs = make_empty_gobs(5)
         expected_keys = set(RawGobs.__annotations__.keys())
         assert set(gobs.keys()) == expected_keys, f"Missing keys: {expected_keys - set(gobs.keys())}"
 
     def test_shapes_consistent(self):
-        from conceptgraph.stages.paths import make_empty_gobs
+        from semgraph.stages.paths import make_empty_gobs
 
         n = 3
         gobs = make_empty_gobs(n, feat_dim=256)
@@ -122,7 +122,7 @@ class TestMakeEmptyGobs:
         assert len(gobs["captions"]) == n
 
     def test_zero_detections(self):
-        from conceptgraph.stages.paths import make_empty_gobs
+        from semgraph.stages.paths import make_empty_gobs
 
         gobs = make_empty_gobs(0)
         assert gobs["xyxy"].shape == (0, 4)

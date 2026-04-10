@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "neuro-nav"
+name = "semantic-space"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -57,7 +57,7 @@ members = [
 [tool.setuptools]
 # if you have package data, we can add [tool.setuptools.package-data] later
 
-# Tell setuptools to *find only* the conceptgraph package, and ignore others like "assets"
+# Tell setuptools to *find only* the semgraph package, and ignore others like "assets"
 [tool.setuptools.packages.find]
-include = ["conceptgraph*"]
+include = ["semgraph*"]
 exclude = ["tests*", "assets*", "docs*", "scripts*"]

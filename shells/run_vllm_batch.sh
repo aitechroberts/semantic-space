@@ -40,8 +40,8 @@ SCANNET_ROOT="${SCANNET_ROOT:-${DATA_ROOT}/ScanNet/scans}"
 CKPT_DIR="${CKPT_DIR:-${DATA_ROOT}/checkpoints}"
 
 # Dataset configs (resolved from REPO_ROOT)
-REPLICA_DATASET_CONFIG="${REPO_ROOT}/conceptgraph/dataset/dataconfigs/replica/replica.yaml"
-SCANNET_DATASET_CONFIG="${REPO_ROOT}/conceptgraph/dataset/dataconfigs/scannet/base.yaml"
+REPLICA_DATASET_CONFIG="${REPO_ROOT}/semgraph/dataset/dataconfigs/replica/replica.yaml"
+SCANNET_DATASET_CONFIG="${REPO_ROOT}/semgraph/dataset/dataconfigs/scannet/base.yaml"
 
 # Scenes to process (set to empty string to skip a dataset)
 # room1 office2 office3
@@ -57,7 +57,7 @@ DET_EXP_SUFFIX="${DET_EXP_SUFFIX:-s_detections_api}"
 PIPELINE_MODE="${PIPELINE_MODE:-all-in-one}"
 
 # Mapping script (used for all-in-one mode; staged mode uses run_staged_pipeline.sh)
-PY_SCRIPT="conceptgraph/slam/vlm_run/batch_vlm_mapping_api.py"
+PY_SCRIPT="semgraph/slam/vlm_run/batch_vlm_mapping_api.py"
 
 # Mapping controls
 DEVICE="${DEVICE:-cuda}"

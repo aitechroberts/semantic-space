@@ -49,7 +49,7 @@ flowchart TB
 
 ```
 neuro-nav/
-├── conceptgraph/
+├── semgraph/
 │   ├── utils/vlms/
 │   │   ├── vlm_api.py          # Universal API client (VLMAPIClient)
 │   │   └── vlm_encoder.py      # Vision encoder extractor (VLMEncoderExtractor)

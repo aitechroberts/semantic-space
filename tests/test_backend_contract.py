@@ -8,7 +8,7 @@ tests are marked with appropriate skip decorators.
 import numpy as np
 import pytest
 
-from conceptgraph.slam.geometry.base import FrameContext, GeometryBackend
+from semgraph.slam.geometry.base import FrameContext, GeometryBackend
 
 
 class TestABCContract:
@@ -26,7 +26,7 @@ class TestProjectionPureFunctions:
     """Projection functions are pure math — always testable."""
 
     def test_project_identity_camera(self):
-        from conceptgraph.slam.geometry.projection import project_points_to_frame
+        from semgraph.slam.geometry.projection import project_points_to_frame
 
         K = np.eye(3) * 500
         K[0, 2] = 320
@@ -41,7 +41,7 @@ class TestProjectionPureFunctions:
         assert 0 <= coords[0, 1] < 480
 
     def test_select_best_views_returns_list(self):
-        from conceptgraph.slam.geometry.projection import select_best_views
+        from semgraph.slam.geometry.projection import select_best_views
 
         K = np.eye(3) * 500
         K[0, 2] = 320
@@ -62,13 +62,13 @@ class TestMeshIoErrors:
     """Test error handling in mesh_io module."""
 
     def test_file_not_found(self):
-        from conceptgraph.slam.geometry.mesh_io import load_instance_mesh
+        from semgraph.slam.geometry.mesh_io import load_instance_mesh
 
         with pytest.raises(FileNotFoundError):
             load_instance_mesh("/nonexistent/path.ply", "generic", "objectId")
 
     def test_unrecognized_format(self, tmp_path):
-        from conceptgraph.slam.geometry.mesh_io import load_instance_mesh
+        from semgraph.slam.geometry.mesh_io import load_instance_mesh
 
         dummy = tmp_path / "dummy.ply"
         dummy.write_text("ply\n")

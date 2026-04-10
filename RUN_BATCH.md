@@ -5,7 +5,7 @@
 1. **ScanNet `.sens` files must be extracted** before running ScanNet scenes. If you haven't done this yet:
 
 ```bash
-cd ~/cmu-grad/neuro-nav/conceptgraph/scripts/scannet_process
+cd ~/cmu-grad/neuro-nav/semgraph/scripts/scannet_process
 for SCENE in scene0046_00 scene0222_00 scene0389_00 scene0435_00; do
   uv run --project ~/cmu-grad/neuro-nav python reader.py \
     --filename ~/cmu-grad/neuro-data/ScanNet/scans/${SCENE}/${SCENE}.sens \
