@@ -1,0 +1,31 @@
+# Core dependencies
+torch>=2.0.0
+numpy>=1.24.0
+
+# CLIP models
+open_clip_torch>=2.20.0
+timm>=0.9.0
+
+# VLM models
+transformers>=4.40.0
+accelerate>=0.27.0
+
+# Text evaluation metrics
+pycocoevalcap>=1.2
+
+# Sentence Transformers (for YOLO baseline)
+sentence-transformers>=2.2.0
+
+# Qwen-VL specific (optional)
+qwen-vl-utils>=0.0.2
+
+# OpenAI (for GPT-4 evaluation)
+openai>=1.0.0
+
+# Utilities
+pillow>=10.0.0
+tqdm>=4.65.0
+scipy>=1.10.0
+
+# For SPICE metric (requires Java)
+# Note: SPICE requires Java 1.8+ to be installed

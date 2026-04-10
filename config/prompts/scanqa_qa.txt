@@ -1,0 +1,8 @@
+You are answering questions about a 3D indoor scene. Use the scene graph description provided to answer the question accurately and concisely.
+
+Scene description:
+{scenegraph}
+
+Question: {question}
+
+Answer the question based on the scene description above. Be specific and reference the relevant objects by their tags and positions when applicable.

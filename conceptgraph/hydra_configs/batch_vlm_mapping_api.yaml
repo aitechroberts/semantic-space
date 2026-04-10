@@ -1,0 +1,99 @@
+defaults:
+  - base
+  - base_mapping
+  - replica
+  - sam
+  - classes
+  - logging_level
+  - prompts_standard
+  - _self_
+
+# Segmentation backend override (set via env or leave to base_mapping default)
+# "sam_auto" = class-agnostic SAM automatic masks (open-vocabulary, recommended)
+# "yolo_sam" = YOLO-World closed-vocab detection + SAM box-prompted masks (legacy)
+segmentation_backend: ${oc.env:SEG_BACKEND,sam_auto}
+
+# Detection experiment and mapping experiment labels
+detections_exp_suffix: s_detections_api
+force_detection: !!bool True
+save_detections: !!bool False
+
+# VLM edges/captions via vLLM container API
+make_edges: ${oc.env:MAKE_EDGES,true}
+
+# vLLM API configuration
+vlm_api_url: ${oc.env:VLM_API_URL,http://localhost:8000/v1}
+vlm_model_name: ${oc.env:VLM_MODEL_NAME,Qwen/Qwen3-VL-2B-Instruct}
+
+# Vision encoder embedding extraction (optional, for research comparisons)
+extract_vlm_encoder_feats: ${oc.env:EXTRACT_VLM_ENCODER_FEATS,false}
+
+# Output controls
+save_json: ${oc.env:SAVE_JSON,true}
+save_pcd: ${oc.env:SAVE_PCD,true}
+save_semantic_snapshot: ${oc.env:SAVE_SEMANTIC_SNAPSHOT,true}
+vis_render: ${oc.env:VIS_RENDER,false}
+
+# Frame sampling
+stride: 10
+exp_suffix: batch_api
+
+# Optional output redirection
+output_root: ${oc.env:OUTPUT_ROOT,}
+
+# Batch-friendly flags
+save_video: !!bool False
+save_objects_all_frames: !!bool False
+
+downsample_voxel_size: 0.01
+obj_pcd_max_points: 5000
+
+debug_render: !!bool False
+
+# Post-processing intervals
+denoise_interval: 5
+filter_interval: 5
+merge_interval: 5
+run_denoise_final_frame: !!bool True
+run_filter_final_frame: !!bool True
+run_merge_final_frame: !!bool True
+
+dbscan_remove_noise: !!bool True
+dbscan_eps: 0.1
+dbscan_min_points: 10
+
+obj_min_points: 0
+obj_min_detections: 1
+
+use_rerun: !!bool False
+save_rerun: !!bool False
+
+use_wandb: ${oc.env:USE_WANDB,false}
+
+# =============================================================================
+# Two-phase pipeline stage configs
+# =============================================================================
+
+# embed.py config
+embed:
+  encoder_name: ${oc.env:EMBED_ENCODER,openai/clip-vit-large-patch14}
+  mode: phase_a                    # "phase_a" or "re_embed"
+  use_sam_fusion: !!bool false     # +3.3% accuracy per Bare Necessities Table 9
+
+# caption.py config (Phase B)
+caption:
+  vlm_name: ${oc.env:CAPTION_VLM,Qwen/Qwen3-VL-2B-Instruct}
+  top_k: 10                        # top-K views per object by n_points
+
+# semantic_assemble.py config (Phase B)
+assemble:
+  encoder: ${oc.env:ASSEMBLE_ENCODER,openai_clip-vit-large-patch14}
+  vlm: ${oc.env:ASSEMBLE_VLM,Qwen_Qwen3-VL-2B-Instruct}
+
+# eval.py config (Phase B)
+eval:
+  encoder: ${oc.env:EVAL_ENCODER,openai_clip-vit-large-patch14}
+  vlm: ${oc.env:EVAL_VLM,Qwen_Qwen3-VL-2B-Instruct}
+  gt_labels: config/eval_1687_labels.txt
+  categories: config/grouped_17_categories.json
+  use_subgraph: !!bool false

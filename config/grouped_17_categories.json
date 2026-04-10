@@ -1,0 +1,19 @@
+{
+  "wall_floor_ceiling": ["wall", "floor", "ceiling"],
+  "door_window": ["door", "window"],
+  "table_desk": ["table", "desk", "counter", "work table", "coffee table", "dining table", "end table", "nightstand"],
+  "chair_seating": ["chair", "office chair", "dining chair", "armchair", "stool", "bar stool", "bench", "recliner", "rocking chair"],
+  "sofa": ["sofa", "couch", "loveseat", "sectional sofa", "futon"],
+  "bed": ["bed", "bunk bed", "crib", "mattress"],
+  "cabinet_storage": ["cabinet", "shelf", "bookshelf", "dresser", "wardrobe", "closet", "drawer", "file cabinet", "chest"],
+  "appliance": ["microwave", "oven", "refrigerator", "dishwasher", "washing machine", "dryer", "stove", "toaster", "coffee maker"],
+  "bathroom": ["sink", "toilet", "bathtub", "shower", "mirror", "towel rack", "soap dispenser"],
+  "lighting": ["lamp", "light", "chandelier", "sconce", "pendant light", "floor lamp", "table lamp", "desk lamp"],
+  "electronics": ["tv", "monitor", "computer", "keyboard", "mouse", "phone", "speaker", "printer", "projector"],
+  "decoration": ["picture", "painting", "poster", "plant", "vase", "sculpture", "clock", "trophy", "flower arrangement"],
+  "textile": ["pillow", "blanket", "curtain", "rug", "mat", "towel", "cushion", "throw pillow"],
+  "container": ["basket", "box", "bag", "bin", "trash can", "recycling bin", "hamper"],
+  "tableware": ["bottle", "cup", "plate", "bowl", "mug", "glass", "pitcher", "utensil"],
+  "book_paper": ["book", "paper", "notebook", "magazine", "binder", "folder"],
+  "other": ["toy", "backpack", "suitcase", "umbrella", "shoe", "clothing", "hat", "key"]
+}

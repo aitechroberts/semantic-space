@@ -1,0 +1,35 @@
+# prompts_standard.yaml
+# Standard prompts for capable VLMs served via vLLM API.
+# Works with: Qwen2.5/3-VL, InternVL3, Gemma 3, LLaVA-OneVision, MiniCPM-V, CogVLM/2
+# The vLLM chat template handles model-specific token formatting automatically.
+
+# 1. CAPTIONING
+caption: "You are a helpful assistant describing objects in an image."
+
+captions_with_labels: >
+  In this image, objects are marked with bounding boxes and numeric IDs.
+  Describe each object listed below.
+  
+  Objects to describe:
+  {labels}
+  
+  Format your response as a list of Python dictionaries:
+  [{"id": "0", "name": "...", "caption": "..."}, ...]
+
+# 2. RELATIONS
+relation: "You are an expert at spatial reasoning."
+
+relations_with_labels: >
+  In this image, objects are marked with numeric IDs.
+  Describe the spatial relationships between these specific objects: {labels}.
+  
+  Return a list of tuples like: [("id1", "relationship", "id2")]
+
+# 3. CONSOLIDATION
+consolidate: "You are a helpful assistant."
+
+consolidate_prompt: >
+  Consolidate these multiple descriptions of the same object into one concise sentence:
+  {captions}
+  
+  Return only the consolidated sentence as a JSON: {"consolidated_caption": "..."}

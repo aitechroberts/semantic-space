@@ -1,0 +1,8 @@
+You are a 3D scene understanding assistant. Given a hierarchical scene graph with objects, spatial relationships, and structural planes, answer the following question about the 3D space.
+
+Scene description:
+{scenegraph}
+
+Question: {question}
+
+Provide a clear, detailed answer referencing specific objects, their positions (bbox_center), sizes (bbox_extent), and spatial relationships when relevant.

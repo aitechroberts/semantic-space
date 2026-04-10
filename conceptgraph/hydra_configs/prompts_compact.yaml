@@ -1,0 +1,33 @@
+# prompts_compact.yaml
+# Simplified prompts for smaller VLMs with limited instruction-following capacity.
+# Works with: SmolVLM-256M/500M, SmolVLM2 2B, IDEFICS2/3, Ovis1.6/2/2.5, OmniVLM
+# Uses shorter templates and simpler output format expectations.
+
+# 1. CAPTIONING
+caption: "Describe the marked objects in this image."
+
+captions_with_labels: >
+  Objects in this image have numbered labels.
+  For each object below, give a one-sentence description.
+  
+  Objects:
+  {labels}
+  
+  Reply as a JSON list: [{"id": "0", "name": "...", "caption": "..."}, ...]
+
+# 2. RELATIONS
+relation: "Describe how objects are positioned relative to each other."
+
+relations_with_labels: >
+  Objects in this image: {labels}.
+  List spatial relationships as tuples: [("id1", "relation", "id2")]
+  Use relations like "on top of", "next to", "under", "inside".
+
+# 3. CONSOLIDATION
+consolidate: "Summarize these descriptions."
+
+consolidate_prompt: >
+  Merge these descriptions of one object into a single sentence:
+  {captions}
+  
+  Reply as JSON: {"consolidated_caption": "..."}

@@ -1,0 +1,27 @@
+The input to the model is a 3D scene description in a JSON format.
+Each entry in the JSON describes one object in the scene, with the following fields:
+
+1. "id": a unique object identifier
+2. "bbox_extent": extents of the 3D bounding box for the object
+3. "bbox_center": centroid of the 3D bounding box for the object
+4. "object_tag": a name for the object
+5. "caption": a brief caption for the object
+6. "color": the color of the object
+7. "material": the material of the object
+8. "candidate_tags": alternative possible names for the object
+
+The user will ask questions, and the task is to answer various user queries about the 3D scene.
+
+OUTPUT FORMAT:
+
+STEP1 - inferred_query: your interpretation of the user query
+STEP2 - relevant_objects: python list of ONLY TOP 2 most relevant object ids for the user query
+STEP3 - reason for relevance: reason for considering objects in previous steps relevant
+STEP4 - Final Answer: A textual response and valid JSON with final "object_tag" and "object_id" to the original input question
+STEP5 - Explanation: A brief explanation and reason of relevance for each relevant object and how it addresses the task
+
+HERE IS YOUR INPUT:
+
+Following is the 3D scene description: {scenegraph}
+Following are the in-context examples: {examples}
+Question: {input}

@@ -1,0 +1,825 @@
+wall
+floor
+ceiling
+door
+window
+table
+chair
+sofa
+bed
+desk
+cabinet
+shelf
+bookshelf
+counter
+sink
+toilet
+bathtub
+shower
+mirror
+lamp
+light
+fan
+tv
+monitor
+computer
+keyboard
+mouse
+phone
+clock
+picture
+painting
+poster
+plant
+vase
+pillow
+blanket
+curtain
+rug
+mat
+towel
+basket
+box
+bag
+bottle
+cup
+plate
+book
+paper
+pen
+toy
+microwave
+oven
+refrigerator
+dishwasher
+washing machine
+dryer
+stove
+fireplace
+radiator
+heater
+air conditioner
+thermostat
+smoke detector
+fire extinguisher
+sprinkler
+exit sign
+trash can
+recycling bin
+tissue box
+soap dispenser
+paper towel dispenser
+hand dryer
+toilet paper holder
+towel rack
+coat hook
+shoe rack
+umbrella stand
+mail slot
+doorbell
+intercom
+security camera
+motion sensor
+keypad
+card reader
+bulletin board
+whiteboard
+blackboard
+projector
+projector screen
+speaker
+microphone
+headphones
+webcam
+printer
+scanner
+copier
+fax machine
+shredder
+stapler
+tape dispenser
+hole punch
+scissors
+ruler
+calculator
+globe
+telescope
+microscope
+easel
+canvas
+palette
+sculpture
+trophy
+medal
+certificate
+diploma
+plaque
+nameplate
+sign
+banner
+flag
+map
+calendar
+notebook
+journal
+binder
+folder
+file cabinet
+drawer
+tray
+inbox
+outbox
+clipboard
+memo pad
+sticky note
+envelope
+stamp
+letter opener
+magnifying glass
+flashlight
+candle
+candle holder
+incense holder
+diffuser
+humidifier
+dehumidifier
+air purifier
+water cooler
+coffee maker
+tea kettle
+toaster
+blender
+juicer
+mixer
+food processor
+slow cooker
+pressure cooker
+rice cooker
+waffle maker
+panini press
+hot plate
+chafing dish
+fondue pot
+wok
+skillet
+saucepan
+stockpot
+baking sheet
+muffin tin
+cake pan
+pie dish
+casserole dish
+roasting pan
+cutting board
+knife block
+spice rack
+utensil holder
+napkin holder
+salt shaker
+pepper mill
+sugar bowl
+butter dish
+gravy boat
+serving platter
+serving bowl
+salad bowl
+soup bowl
+cereal bowl
+dessert plate
+dinner plate
+bread plate
+saucer
+mug
+wine glass
+champagne flute
+cocktail glass
+shot glass
+beer glass
+tumbler
+pitcher
+carafe
+decanter
+ice bucket
+coaster
+place mat
+table runner
+tablecloth
+centerpiece
+flower arrangement
+fruit bowl
+candy dish
+cookie jar
+bread box
+canisters
+mason jar
+storage container
+lunch box
+thermos
+water bottle
+travel mug
+sippy cup
+baby bottle
+high chair
+booster seat
+car seat
+stroller
+playpen
+crib
+changing table
+baby monitor
+mobile
+rattle
+pacifier
+teething ring
+stuffed animal
+doll
+action figure
+building blocks
+puzzle
+board game
+card game
+dice
+chess set
+checkers
+dominoes
+marbles
+yo-yo
+kite
+frisbee
+ball
+baseball
+basketball
+football
+soccer ball
+tennis ball
+golf ball
+volleyball
+bowling ball
+hockey puck
+badminton shuttlecock
+skateboard
+scooter
+bicycle
+tricycle
+roller skates
+ice skates
+ski
+snowboard
+surfboard
+paddleboard
+kayak
+canoe
+life jacket
+snorkel
+goggles
+swim cap
+flippers
+fishing rod
+tackle box
+net
+tent
+sleeping bag
+camping stove
+lantern
+compass
+binoculars
+field guide
+backpack
+duffel bag
+suitcase
+carry-on
+garment bag
+tote bag
+shoulder bag
+messenger bag
+clutch
+wallet
+purse
+coin purse
+key chain
+luggage tag
+passport holder
+travel pillow
+eye mask
+earplugs
+neck pillow
+footrest
+ottoman
+recliner
+rocking chair
+bean bag
+hammock
+swing
+bench
+stool
+bar stool
+dining chair
+office chair
+desk chair
+gaming chair
+folding chair
+lawn chair
+adirondack chair
+lounge chair
+chaise lounge
+loveseat
+sectional sofa
+futon
+daybed
+bunk bed
+loft bed
+trundle bed
+murphy bed
+waterbed
+air mattress
+mattress pad
+mattress topper
+fitted sheet
+flat sheet
+duvet
+comforter
+quilt
+bedspread
+bed skirt
+pillow sham
+pillowcase
+body pillow
+throw pillow
+decorative pillow
+neck roll
+bolster
+cushion
+seat cushion
+floor cushion
+meditation cushion
+yoga mat
+exercise mat
+resistance band
+dumbbell
+kettlebell
+barbell
+weight plate
+weight bench
+pull-up bar
+jump rope
+punching bag
+boxing gloves
+yoga block
+foam roller
+stability ball
+balance board
+treadmill
+elliptical
+stationary bike
+rowing machine
+stair climber
+step platform
+aerobics step
+medicine ball
+bosu ball
+ab wheel
+hand grip
+wrist weight
+ankle weight
+pedometer
+heart rate monitor
+fitness tracker
+stopwatch
+whistle
+megaphone
+walkie talkie
+radio
+antenna
+satellite dish
+power strip
+extension cord
+surge protector
+timer
+dimmer switch
+light switch
+outlet
+plug
+adapter
+converter
+battery
+battery charger
+solar panel
+generator
+inverter
+transformer
+circuit breaker
+fuse box
+junction box
+conduit
+wire
+cable
+ethernet cable
+hdmi cable
+usb cable
+power cord
+phone charger
+laptop charger
+wireless charger
+dock
+hub
+router
+modem
+switch
+access point
+repeater
+bridge
+firewall
+server
+rack
+ups
+pdu
+patch panel
+kvm switch
+monitor arm
+monitor stand
+laptop stand
+tablet stand
+phone stand
+desk pad
+mouse pad
+wrist rest
+footrest
+desk lamp
+floor lamp
+table lamp
+pendant light
+chandelier
+track light
+recessed light
+sconce
+vanity light
+night light
+string lights
+led strip
+spotlight
+floodlight
+lantern
+candelabra
+torchiere
+arc lamp
+banker lamp
+lava lamp
+salt lamp
+desk organizer
+pen holder
+letter tray
+magazine rack
+coat rack
+hat rack
+key holder
+mail organizer
+wall organizer
+pegboard
+corkboard
+dry erase board
+chalkboard
+easel
+standing desk
+l-shaped desk
+u-shaped desk
+corner desk
+executive desk
+writing desk
+secretary desk
+roll top desk
+computer desk
+drafting table
+work table
+craft table
+sewing table
+ironing board
+laundry basket
+hamper
+drying rack
+clothes hanger
+garment steamer
+lint roller
+sewing kit
+thread
+needle
+pin cushion
+thimble
+measuring tape
+fabric scissors
+rotary cutter
+cutting mat
+seam ripper
+bobbin
+spool
+button
+zipper
+velcro
+snap
+hook and eye
+elastic
+ribbon
+lace
+trim
+applique
+patch
+embroidery hoop
+cross stitch
+knitting needles
+crochet hook
+yarn
+wool
+fabric
+felt
+burlap
+canvas
+muslin
+silk
+satin
+velvet
+denim
+leather
+suede
+fur
+fleece
+polyester
+nylon
+cotton
+linen
+chiffon
+organza
+tulle
+mesh
+net
+screen
+shade
+blind
+shutter
+valance
+cornice
+drape
+panel
+swag
+tieback
+finial
+rod
+ring
+clip
+hook
+bracket
+rail
+track
+pulley
+cord
+chain
+tassel
+fringe
+pompom
+beading
+sequin
+rhinestone
+pearl
+gemstone
+crystal
+glass
+ceramic
+porcelain
+stoneware
+earthenware
+terracotta
+clay
+plaster
+concrete
+marble
+granite
+slate
+limestone
+sandstone
+travertine
+quartz
+onyx
+jade
+obsidian
+amber
+coral
+shell
+bone
+horn
+ivory
+tusk
+feather
+fur
+hide
+pelt
+wool
+silk
+bamboo
+rattan
+wicker
+cane
+reed
+straw
+jute
+sisal
+hemp
+cork
+bark
+driftwood
+log
+plank
+beam
+board
+panel
+tile
+brick
+block
+slab
+paver
+cobblestone
+gravel
+sand
+soil
+mulch
+peat
+compost
+fertilizer
+seed
+bulb
+tuber
+rhizome
+cutting
+graft
+sapling
+shrub
+bush
+hedge
+tree
+palm
+fern
+moss
+lichen
+ivy
+vine
+creeper
+climber
+herb
+grass
+weed
+flower
+bud
+bloom
+petal
+leaf
+stem
+branch
+twig
+root
+bark
+trunk
+stump
+log
+firewood
+kindling
+charcoal
+briquette
+ash
+soot
+dust
+debris
+rubble
+wreckage
+scrap
+shaving
+sawdust
+chip
+splinter
+fragment
+shard
+sliver
+crumb
+grain
+powder
+paste
+gel
+liquid
+solution
+mixture
+compound
+element
+mineral
+metal
+alloy
+steel
+iron
+aluminum
+copper
+brass
+bronze
+silver
+gold
+platinum
+titanium
+zinc
+tin
+lead
+nickel
+chromium
+tungsten
+cobalt
+magnesium
+lithium
+sodium
+potassium
+calcium
+silicon
+carbon
+nitrogen
+oxygen
+hydrogen
+helium
+neon
+argon
+krypton
+xenon
+radon
+fluorine
+chlorine
+bromine
+iodine
+sulfur
+phosphorus
+arsenic
+antimony
+bismuth
+selenium
+tellurium
+polonium
+mercury
+cadmium
+thallium
+barium
+strontium
+radium
+beryllium
+boron
+gallium
+germanium
+indium
+hafnium
+tantalum
+rhenium
+osmium
+iridium
+rhodium
+palladium
+ruthenium
+zirconium
+niobium
+molybdenum
+technetium
+vanadium
+scandium
+yttrium
+lanthanum
+cerium
+praseodymium
+neodymium
+samarium
+europium
+gadolinium
+terbium
+dysprosium
+holmium
+erbium
+thulium
+ytterbium
+lutetium
+actinium
+thorium
+protactinium
+uranium
+neptunium
+plutonium
+americium
+curium
+berkelium
+californium
+einsteinium
+fermium
+mendelevium
+nobelium
+lawrencium
+rutherfordium
+dubnium
+seaborgium
+bohrium
+hassium
+meitnerium
+darmstadtium
+roentgenium
+copernicium
+nihonium
+flerovium
+moscovium
+livermorium
+tennessine
+oganesson

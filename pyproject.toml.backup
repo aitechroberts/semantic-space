@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neuro-nav"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+
+]
+
+[project.optional-dependencies]
+sparse = [
+    "dust3r",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.workspace]
+members = [
+    "z_evaluations",
+]
+
+[tool.setuptools]
+# if you have package data, we can add [tool.setuptools.package-data] later
+
+# Tell setuptools to *find only* the conceptgraph package, and ignore others like "assets"
+[tool.setuptools.packages.find]
+include = ["conceptgraph*"]
+exclude = ["tests*", "assets*", "docs*", "scripts*"]

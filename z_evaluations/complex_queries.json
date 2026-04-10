@@ -1,0 +1,282 @@
+{ "complex_queries": [
+    {
+        "scene": "room0",
+        "id": "room0_aff_1",
+        "type": "affordance",
+        "query": "Something I can rest a hot casserole dish on in the middle of a movie night without worrying about burning or staining the upholstery.",
+        "answer": "coffee table"
+    },
+    {
+        "scene": "room0",
+        "id": "room0_aff_2",
+        "type": "affordance",
+        "query": "Somewhere I can temporarily line up three laptops side-by-side where people on both sections of the sofa can look at them together.",
+        "answer": "coffee table"
+    },
+    {
+        "scene": "room0",
+        "id": "room0_aff_3",
+        "type": "affordance",
+        "query": "A surface where I can set my keys and wallet as soon as I walk in the door so they’re visible but not on the floor.",
+        "answer": "cabinet"
+    },
+    {
+        "scene": "room0",
+        "id": "room0_aff_4",
+        "type": "affordance",
+        "query": "Somewhere elevated and stable where I could balance a projector so it throws an image toward the wall above the long sofa.",
+        "answer": "cabinet"
+    },
+    {
+        "scene": "room0",
+        "id": "room0_aff_5",
+        "type": "affordance",
+        "query": "Something soft but supportive I can sit on to face the coffee table while keeping my feet on the rug instead of the bare floor.",
+        "answer": "armchair"
+    },
+    {
+        "scene": "room0",
+        "id": "room0_neg_1",
+        "type": "negation",
+        "query": "Somewhere to put my coffee mug that is not on anything made of fabric or cushions.",
+        "answer": "coffee table"
+    },
+    {
+        "scene": "room0",
+        "id": "room0_neg_2",
+        "type": "negation",
+        "query": "Something comfortable to sit on that is not any of the stools or ottomans.",
+        "answer": "sofa"
+    },
+    {
+        "scene": "room0",
+        "id": "room0_neg_3",
+        "type": "negation",
+        "query": "A place to display framed photos that is not the wall above the sofa.",
+        "answer": "cabinet"
+    },
+    {
+        "scene": "room0",
+        "id": "room0_neg_4",
+        "type": "negation",
+        "query": "Somewhere I could place a floor fan that is not blocking the doorway and not on the rug.",
+        "answer": "floor"
+    },
+    {
+        "scene": "room0",
+        "id": "room0_neg_5",
+        "type": "negation",
+        "query": "Something rigid and elevated I could use for a board game that is not the coffee table in the center of the rug.",
+        "answer": "side table"
+    },
+    {
+        "scene": "room1",
+        "id": "room1_aff_1",
+        "type": "affordance",
+        "query": "Somewhere I can pile up textbooks for late-night studying within arm’s reach while I’m sitting on the bed.",
+        "answer": "nightstand"
+    },
+    {
+        "scene": "room1",
+        "id": "room1_aff_2",
+        "type": "affordance",
+        "query": "A stable surface where I can lay out a laptop and notebook so I can work while sitting on the edge of the bed without blocking the path to the door.",
+        "answer": "dresser"
+    },
+    {
+        "scene": "room1",
+        "id": "room1_aff_3",
+        "type": "affordance",
+        "query": "Something I can grip with one hand to help myself stand up from kneeling on the rug near the foot of the bed.",
+        "answer": "bed"
+    },
+    {
+        "scene": "room1",
+        "id": "room1_aff_4",
+        "type": "affordance",
+        "query": "Somewhere off the floor where I can neatly fold and stack a week’s worth of sweaters.",
+        "answer": "dresser"
+    },
+    {
+        "scene": "room1",
+        "id": "room1_aff_5",
+        "type": "affordance",
+        "query": "An object I can turn on to give soft light for reading without lighting up the whole room.",
+        "answer": "lamp"
+    },
+    {
+        "scene": "room1",
+        "id": "room1_neg_1",
+        "type": "negation",
+        "query": "A place to set my glasses at night that is not on the bed and not on the floor.",
+        "answer": "nightstand"
+    },
+    {
+        "scene": "room1",
+        "id": "room1_neg_2",
+        "type": "negation",
+        "query": "Somewhere to store clothes that is not the bed and not the floor.",
+        "answer": "dresser"
+    },
+    {
+        "scene": "room1",
+        "id": "room1_neg_3",
+        "type": "negation",
+        "query": "Something flat and rigid I can stand on to reach the top of the window that is not the mattress or the rug.",
+        "answer": "dresser"
+    },
+    {
+        "scene": "room1",
+        "id": "room1_neg_4",
+        "type": "negation",
+        "query": "A surface where I can place a glass of water that is not the same table as the lamp on the far side of the bed.",
+        "answer": "near-side nightstand"
+    },
+    {
+        "scene": "room1",
+        "id": "room1_neg_5",
+        "type": "negation",
+        "query": "Somewhere to drop my backpack when I come in that is not blocking the door and not on any fabric furniture.",
+        "answer": "floor"
+    },
+    {
+        "scene": "office2",
+        "id": "office2_aff_1",
+        "type": "affordance",
+        "query": "Something I could place a laptop on so that I can present slides to a small group sitting on the sofa while I sit nearby.",
+        "answer": "coffee table"
+    },
+    {
+        "scene": "office2",
+        "id": "office2_aff_2",
+        "type": "affordance",
+        "query": "A surface where I can spread out printed handouts for a team of four people to pick up before a meeting.",
+        "answer": "meeting table"
+    },
+    {
+        "scene": "office2",
+        "id": "office2_aff_3",
+        "type": "affordance",
+        "query": "Somewhere I can rest a projector so it points toward the large display wall without blocking people walking between the door and the table.",
+        "answer": "tv stand"
+    },
+    {
+        "scene": "office2",
+        "id": "office2_aff_4",
+        "type": "affordance",
+        "query": "Something soft and long where two people can lounge while still facing the screens.",
+        "answer": "sofa"
+    },
+    {
+        "scene": "office2",
+        "id": "office2_aff_5",
+        "type": "affordance",
+        "query": "A place I can keep a recycling box out of the way but still near where people finish their drinks at the meeting table.",
+        "answer": "floor"
+    },
+    {
+        "scene": "office2",
+        "id": "office2_neg_1",
+        "type": "negation",
+        "query": "Somewhere to jot notes on my laptop that is not the coffee table and not my lap.",
+        "answer": "meeting table"
+    },
+    {
+        "scene": "office2",
+        "id": "office2_neg_2",
+        "type": "negation",
+        "query": "Something to sit on while facing the meeting table that is not the sofa.",
+        "answer": "office chair"
+    },
+    {
+        "scene": "office2",
+        "id": "office2_neg_3",
+        "type": "negation",
+        "query": "A rigid surface for placing a hot mug that is not on the wooden meeting table and not on the fabric of the sofa.",
+        "answer": "coffee table"
+    },
+    {
+        "scene": "office2",
+        "id": "office2_neg_4",
+        "type": "negation",
+        "query": "Somewhere to stash a power strip off the floor that is not the top of the coffee table and not any chair seat.",
+        "answer": "tv stand"
+    },
+    {
+        "scene": "office2",
+        "id": "office2_neg_5",
+        "type": "negation",
+        "query": "An object I can look at to check the time that is not any of the digital screens.",
+        "answer": "wall clock"
+    },
+    {
+        "scene": "office3",
+        "id": "office3_aff_1",
+        "type": "affordance",
+        "query": "A place where I can set up three laptops side-by-side so that several teammates can gather around for a quick working session.",
+        "answer": "conference table"
+    },
+    {
+        "scene": "office3",
+        "id": "office3_aff_2",
+        "type": "affordance",
+        "query": "Somewhere narrow but long where I can line up demo devices along the wall for people to browse during a presentation.",
+        "answer": "side bench"
+    },
+    {
+        "scene": "office3",
+        "id": "office3_aff_3",
+        "type": "affordance",
+        "query": "Something comfortable to sit on while informally chatting with a colleague who is standing near the coffee table.",
+        "answer": "sofa"
+    },
+    {
+        "scene": "office3",
+        "id": "office3_aff_4",
+        "type": "affordance",
+        "query": "A stable surface I can stand next to while using the large screens as a backdrop during a talk, without blocking the seating at the table.",
+        "answer": "floor"
+    },
+    {
+        "scene": "office3",
+        "id": "office3_aff_5",
+        "type": "affordance",
+        "query": "Somewhere central where we can place snacks and drinks so both people at the sofa and at the chairs can reach them during a meeting.",
+        "answer": "conference table"
+    },
+    {
+        "scene": "office3",
+        "id": "office3_neg_1",
+        "type": "negation",
+        "query": "A place to put the wastebasket so it is reachable from the meeting table but not blocking the path to the door.",
+        "answer": "floor beside conference table"
+    },
+    {
+        "scene": "office3",
+        "id": "office3_neg_2",
+        "type": "negation",
+        "query": "Somewhere to rest a projector that is not on the conference table and not on the floor.",
+        "answer": "side bench"
+    },
+    {
+        "scene": "office3",
+        "id": "office3_neg_3",
+        "type": "negation",
+        "query": "Something to sit on for a one-on-one conversation that is not any of the chairs around the conference table.",
+        "answer": "sofa"
+    },
+    {
+        "scene": "office3",
+        "id": "office3_neg_4",
+        "type": "negation",
+        "query": "A rigid elevated surface where I can quickly place my phone that is not the coffee table and not any seating surface.",
+        "answer": "side bench"
+    },
+    {
+        "scene": "office3",
+        "id": "office3_neg_5",
+        "type": "negation",
+        "query": "Somewhere to put a shared power strip for charging laptops that is not directly under people’s feet and not on top of the sofa.",
+        "answer": "conference table"
+    }
+]}

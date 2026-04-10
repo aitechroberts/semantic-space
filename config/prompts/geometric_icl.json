@@ -1,0 +1,4 @@
+{
+  "question": "Which is bigger the white couch or the pillow (id: 27)?",
+  "answer": "The size of white couch (id: 28) compared to the pillow (id:27) can be determined using the \"bbox_extent\" field which determines the size of the bounding box of objects.\n\nThe first entry corresponds to size in x dimension, the second entry corresponds to size in y dimension and third entry tells the height in z dimension.\n\nThe bbox_extent for white couch (id: 28) is [1.0, 0.9, 0.6] and pillow (id:27) is [0.7, 0.6, 0.3]. Comparing these sizes of bounding boxes it is clear that white couch (id: 28) is bigger."
+}

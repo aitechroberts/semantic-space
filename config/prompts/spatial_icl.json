@@ -1,0 +1,4 @@
+{
+  "question": "Where is the white couch (id: 28) with respect to pillow (id: 27)?",
+  "answer": "The location of white couch (id: 28) w.r.t pillow (id:27) can be determined using the field \"bbox_center\" which determines the location of the objects. The bbox_center for white couch (id: 28) is [2.8, 2.3, -1.2] and pillow (id:27) is [2.9, 2.5, -0.8].\n\nThe first entry corresponds to x coordinate, the second entry corresponds to y coordinate and third entry tells the height in z coordinates.\n\nThe x-axis value in coordinate is very close i.e 2.8 for white couch and 2.9 for pillow. Similarly, y-axis value in coordinate system is very close i.e 2.3 for white couch and 2.5 for pillow. This means that the objects are at the same position and close by.\n\nSince the z-axis value which determines height in coordinate system is higher i.e -0.8 for pillow than -1.2 for white couch. The pillow is on top of the white couch."
+}
