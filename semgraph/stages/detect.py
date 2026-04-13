@@ -16,9 +16,9 @@ Standalone usage::
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import cv2
 import numpy as np
@@ -27,6 +27,7 @@ import torch
 
 from PIL import Image
 
+from semgraph.detection.base import Detector, Segmenter
 from semgraph.slam.geometry.base import FrameContext
 from semgraph.slam.geometry.projection import compute_projected_crop_bbox
 from semgraph.slam.utils import (
@@ -112,35 +113,88 @@ def filter_sam_auto_masks(
 
 @dataclass
 class DetectionModels:
-    """Holds segmentation models only — no encoders or VLMs."""
-    sam_predictor: Any = None
-    detection_model: Any = None      # YOLO-World (yolo_sam mode)
+    """Holds detection/segmentation backends — no encoders or VLMs."""
+    detector: Detector | None = None
+    segmenter: Segmenter | None = None
     seg_backend: str = "sam_auto"
 
 
-def load_models(cfg: Any) -> DetectionModels:
-    """Load SAM and YOLO (if yolo_sam). No CLIP or VLM encoder."""
-    from semgraph.utils.general_utils import measure_time
+_HF_WEIGHT_REPOS: dict[str, str] = {
+    "sam3.pt": "facebook/sam3",
+}
 
+
+def _resolve_weights(filename: str) -> str:
+    """Resolve model weights path.
+
+    Search order:
+    1. ``$CKPT_DIR/<filename>``
+    2. Current working directory (bare *filename*)
+    3. HuggingFace hub cache (if *filename* is mapped in ``_HF_WEIGHT_REPOS``)
+    4. Fall back to bare *filename* (lets ultralytics try its own download).
+    """
+    ckpt_dir = os.environ.get("CKPT_DIR", "")
+    if ckpt_dir and (Path(ckpt_dir) / filename).exists():
+        return str(Path(ckpt_dir) / filename)
+    if Path(filename).exists():
+        return filename
+    if filename in _HF_WEIGHT_REPOS:
+        try:
+            from huggingface_hub import hf_hub_download
+            path = hf_hub_download(repo_id=_HF_WEIGHT_REPOS[filename], filename=filename)
+            return str(path)
+        except Exception:
+            pass
+    return filename
+
+
+_BACKEND_SPEC: dict[str, dict[str, Any]] = {
+    "sam_auto":      {"detector": None,       "det_weights": None,                        "segmenter": "sam",  "seg_weights": "sam2.1_b.pt"},
+    "sam3_auto":     {"detector": None,       "det_weights": None,                        "segmenter": "sam3", "seg_weights": "sam3.pt"},
+    "yolo_sam":      {"detector": "yolo_world","det_weights": "yolov8l-worldv2.pt",       "segmenter": "sam",  "seg_weights": "sam2.1_b.pt"},
+    "yoloe_sam":     {"detector": "yoloe",    "det_weights": "yoloe-v8l-seg.pt",          "segmenter": "sam",  "seg_weights": "sam2.1_b.pt"},
+    "florence2_sam":  {"detector": "florence2", "det_weights": "microsoft/Florence-2-large","segmenter": "sam",  "seg_weights": "sam2.1_b.pt"},
+    "yolo_sam3":     {"detector": "yolo_world","det_weights": "yolov8l-worldv2.pt",       "segmenter": "sam3", "seg_weights": "sam3.pt"},
+    "yoloe_sam3":    {"detector": "yoloe",    "det_weights": "yoloe-v8l-seg.pt",          "segmenter": "sam3", "seg_weights": "sam3.pt"},
+    "florence2_sam3": {"detector": "florence2", "det_weights": "microsoft/Florence-2-large","segmenter": "sam3", "seg_weights": "sam3.pt"},
+}
+
+
+def load_models(cfg: Any, obj_classes: Any = None) -> DetectionModels:
+    """Load detection and segmentation models via the ABC factories.
+
+    Weight path resolution and config parsing happen here — model classes
+    never see the Hydra config.
+    """
     seg_backend = cfg.get("segmentation_backend", "sam_auto")
-    models = DetectionModels(seg_backend=seg_backend)
 
-    if seg_backend != "gt_instances":
-        from ultralytics import SAM, YOLO
+    if seg_backend == "gt_instances":
+        return DetectionModels(seg_backend=seg_backend)
 
-        ckpt_dir = os.environ.get("CKPT_DIR", "")
-        sam_weights = "sam2.1_b.pt"
-        if ckpt_dir and (Path(ckpt_dir) / sam_weights).exists():
-            sam_weights = str(Path(ckpt_dir) / sam_weights)
-        models.sam_predictor = SAM(sam_weights)
+    from semgraph.detection import get_detector, get_segmenter
 
-        if seg_backend == "yolo_sam":
-            yolo_weights = "yolov8l-worldv2.pt"
-            if ckpt_dir and (Path(ckpt_dir) / yolo_weights).exists():
-                yolo_weights = str(Path(ckpt_dir) / yolo_weights)
-            models.detection_model = measure_time(YOLO)(yolo_weights)
+    spec = _BACKEND_SPEC.get(seg_backend)
+    if spec is None:
+        raise ValueError(
+            f"Unknown segmentation_backend '{seg_backend}'. "
+            f"Valid options: {', '.join(list(_BACKEND_SPEC) + ['gt_instances'])}"
+        )
 
-    return models
+    device = cfg.get("device", "cuda")
+
+    segmenter = get_segmenter(spec["segmenter"])
+    segmenter.load(weights=_resolve_weights(spec["seg_weights"]), device=device)
+
+    det_name = spec["detector"]
+    detector = get_detector(det_name)
+    if detector is not None:
+        weights = _resolve_weights(spec["det_weights"])
+        load_kwargs: dict[str, Any] = {}
+        if obj_classes is not None and det_name in ("yolo_world", "yoloe"):
+            load_kwargs["classes"] = obj_classes.get_classes_arr()
+        detector.load(weights=weights, device=device, **load_kwargs)
+
+    return DetectionModels(detector=detector, segmenter=segmenter, seg_backend=seg_backend)
 
 
 # ---------------------------------------------------------------------------
@@ -259,20 +313,37 @@ def _run_detection(
     cfg: Any,
     obj_classes: Any,
 ) -> dict | None:
-    """Run segmentation only (no CLIP, no VLM). Returns geometry-only RawGobs."""
-    color_path = frame_ctx.color_path
+    """Run detection + segmentation via ABC backends. Returns geometry-only RawGobs."""
     image_rgb = frame_ctx.image_rgb
+    color_path = frame_ctx.color_path
 
-    seg_backend = models.seg_backend
-
-    if seg_backend == "yolo_sam":
-        masks_np, xyxy_np, confidences, detection_class_ids, detection_class_labels, classes_arr = (
-            _segment_yolo_sam(models, color_path, image_rgb, obj_classes)
+    if models.detector is not None:
+        # Detector produces boxes; segmenter produces masks prompted by those boxes
+        det_result = models.detector.detect(image_rgb, color_path=color_path)
+        seg_result = models.segmenter.segment(
+            image_rgb, boxes=det_result.xyxy, color_path=color_path,
         )
+        n = min(len(det_result.xyxy), len(seg_result.masks))
+        if n == 0:
+            return None
+        masks_np = seg_result.masks[:n]
+        xyxy_np = det_result.xyxy[:n]
+        confidences = det_result.confidence[:n]
+        detection_class_ids = det_result.class_ids[:n]
+        detection_class_labels = det_result.class_labels[:n]
+        classes_arr = det_result.classes
     else:
-        masks_np, xyxy_np, confidences, detection_class_ids, detection_class_labels, classes_arr = (
-            _segment_sam_auto(models, color_path, image_rgb, cfg)
+        # Auto mode: segmenter finds everything, then pipeline filters
+        seg_result = models.segmenter.segment(image_rgb, boxes=None, color_path=color_path)
+        masks_np, xyxy_np, confidences = filter_sam_auto_masks(
+            seg_result.masks, seg_result.xyxy, seg_result.confidence, image_rgb,
+            min_area_pixels=cfg.get("sam_auto_min_mask_area_pixels", 100),
+            max_area_fraction=cfg.get("sam_auto_max_mask_area_fraction", 0.95),
+            nms_iou_threshold=cfg.get("sam_auto_nms_iou_threshold", 0.7),
         )
+        detection_class_ids = np.zeros(len(xyxy_np), dtype=np.int32)
+        detection_class_labels = [f"object {i}" for i in range(len(xyxy_np))]
+        classes_arr = ["object"]
 
     if masks_np.shape[0] == 0:
         return None
@@ -293,68 +364,6 @@ def _run_detection(
         "vlm_vit_feats": None,
         "vlm_proj_feats": None,
     }
-
-
-def _segment_yolo_sam(models, color_path, image_rgb, obj_classes):
-    """YOLO-World + SAM box-prompted segmentation."""
-    results = models.detection_model.predict(color_path, conf=0.1, verbose=False)
-    confidences = results[0].boxes.conf.cpu().numpy()
-    detection_class_ids = results[0].boxes.cls.cpu().numpy().astype(int)
-    detection_class_labels = [
-        f"{obj_classes.get_classes_arr()[cid]} {ci}"
-        for ci, cid in enumerate(detection_class_ids)
-    ]
-    xyxy_tensor = results[0].boxes.xyxy
-    xyxy_np = xyxy_tensor.cpu().numpy()
-
-    if xyxy_tensor.numel() != 0:
-        sam_out = models.sam_predictor.predict(color_path, bboxes=xyxy_tensor, verbose=False)
-        masks_tensor = sam_out[0].masks.data
-        masks_np = masks_tensor.detach().cpu().numpy()
-        if masks_np.dtype != np.bool_:
-            masks_np = masks_np > 0.5
-
-        n = min(xyxy_np.shape[0], masks_np.shape[0])
-        if n == 0:
-            H, W = image_rgb.shape[:2]
-            return np.empty((0, H, W), dtype=np.bool_), np.empty((0, 4), dtype=np.float32), np.empty((0,), dtype=np.float32), np.empty((0,), dtype=np.int32), [], obj_classes.get_classes_arr()
-        xyxy_np, confidences, detection_class_ids, masks_np = xyxy_np[:n], confidences[:n], detection_class_ids[:n], masks_np[:n]
-    else:
-        H, W = image_rgb.shape[:2]
-        return np.empty((0, H, W), dtype=np.bool_), np.empty((0, 4), dtype=np.float32), np.empty((0,), dtype=np.float32), np.empty((0,), dtype=np.int32), [], obj_classes.get_classes_arr()
-
-    return masks_np, xyxy_np, confidences, detection_class_ids, detection_class_labels, obj_classes.get_classes_arr()
-
-
-def _segment_sam_auto(models, color_path, image_rgb, cfg):
-    """SAM automatic mask generation (class-agnostic)."""
-    sam_results = models.sam_predictor.predict(color_path, verbose=False)
-    r = sam_results[0]
-
-    H, W = image_rgb.shape[:2]
-    if r.masks is not None and r.masks.data.numel() > 0:
-        masks_np = r.masks.data.detach().cpu().numpy()
-        if masks_np.dtype != np.bool_:
-            masks_np = masks_np > 0.5
-        xyxy_np = r.boxes.xyxy.cpu().numpy()
-        confidences = r.boxes.conf.cpu().numpy() if r.boxes.conf is not None else np.ones(len(xyxy_np), dtype=np.float32)
-
-        masks_np, xyxy_np, confidences = filter_sam_auto_masks(
-            masks_np, xyxy_np, confidences, image_rgb,
-            min_area_pixels=cfg.get("sam_auto_min_mask_area_pixels", 100),
-            max_area_fraction=cfg.get("sam_auto_max_mask_area_fraction", 0.95),
-            nms_iou_threshold=cfg.get("sam_auto_nms_iou_threshold", 0.7),
-        )
-    else:
-        masks_np = np.empty((0, H, W), dtype=np.bool_)
-        xyxy_np = np.empty((0, 4), dtype=np.float32)
-        confidences = np.empty((0,), dtype=np.float32)
-
-    detection_class_ids = np.zeros(len(xyxy_np), dtype=np.int32)
-    detection_class_labels = [f"object {i}" for i in range(len(xyxy_np))]
-    classes_arr = ["object"]
-
-    return masks_np, xyxy_np, confidences, detection_class_ids, detection_class_labels, classes_arr
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +401,6 @@ def main_standalone(cfg):
 
     backend = get_geometry_backend(cfg.get("pipeline_mode", "trajectory"))
     geo_ctx = backend.load(cfg)
-    models = load_models(cfg)
 
     det_cfg = cfg_to_dict(cfg)
     obj_classes = ObjectClasses(
@@ -400,8 +408,7 @@ def main_standalone(cfg):
         bg_classes=det_cfg["bg_classes"],
         skip_bg=det_cfg["skip_bg"],
     )
-    if models.seg_backend == "yolo_sam" and models.detection_model is not None:
-        models.detection_model.set_classes(obj_classes.get_classes_arr())
+    models = load_models(cfg, obj_classes=obj_classes)
 
     skip_existing = cfg.get("skip_existing_detections", False)
 
@@ -478,7 +485,7 @@ if __name__ == "__main__":
     import hydra
     from omegaconf import DictConfig
 
-    @hydra.main(version_base=None, config_path="../../hydra_configs", config_name="batch_vlm_mapping_api")
+    @hydra.main(version_base=None, config_path="../hydra_configs", config_name="batch_vlm_mapping_api")
     def main(cfg: DictConfig):
         main_standalone(cfg)
 

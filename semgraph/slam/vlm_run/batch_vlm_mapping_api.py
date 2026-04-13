@@ -83,10 +83,8 @@ def main(cfg: DictConfig):
     if seg_backend == "gt_instances":
         run_detections = False
 
-    # Load detection models
-    models = detect_stage.load_models(cfg)
-    if seg_backend == "yolo_sam" and models.detection_model is not None:
-        models.detection_model.set_classes(obj_classes.get_classes_arr())
+    # Load detection models (vocabulary is set via obj_classes kwarg)
+    models = detect_stage.load_models(cfg, obj_classes=obj_classes)
 
     # VLM client for captioning
     vlm_client = caption_stage.init_vlm_client(cfg)

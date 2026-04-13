@@ -12,7 +12,7 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "neuro-nav",
+    "semantic-space",
     "z-evaluations",
 ]
 
@@ -2386,85 +2386,6 @@ wheels = [
 ]
 
 [[package]]
-name = "neuro-nav"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "accelerate" },
-    { name = "cmake" },
-    { name = "dill" },
-    { name = "distinctipy" },
-    { name = "faiss-cpu" },
-    { name = "h5py" },
-    { name = "hydra-core" },
-    { name = "imageio" },
-    { name = "kornia" },
-    { name = "matplotlib" },
-    { name = "natsort" },
-    { name = "ninja" },
-    { name = "numpy" },
-    { name = "open-clip-torch" },
-    { name = "open3d" },
-    { name = "openai" },
-    { name = "plotly" },
-    { name = "plyfile" },
-    { name = "pyliblzfse" },
-    { name = "pypng" },
-    { name = "pyyaml" },
-    { name = "rerun-sdk" },
-    { name = "scipy" },
-    { name = "supervision" },
-    { name = "torch" },
-    { name = "torchvision" },
-    { name = "tqdm" },
-    { name = "transformers" },
-    { name = "trimesh" },
-    { name = "tyro" },
-    { name = "ultralytics" },
-    { name = "vllm" },
-    { name = "wandb" },
-    { name = "weave" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "accelerate", specifier = ">=1.13.0" },
-    { name = "cmake", specifier = ">=4.3.1" },
-    { name = "dill", specifier = ">=0.4.1" },
-    { name = "distinctipy", specifier = ">=1.3.4" },
-    { name = "faiss-cpu", specifier = ">=1.13.2" },
-    { name = "h5py", specifier = ">=3.16.0" },
-    { name = "hydra-core", specifier = ">=1.3.2" },
-    { name = "imageio", specifier = ">=2.37.3" },
-    { name = "kornia", specifier = ">=0.8.2" },
-    { name = "matplotlib", specifier = ">=3.10.8" },
-    { name = "natsort", specifier = ">=8.4.0" },
-    { name = "ninja", specifier = ">=1.13.0" },
-    { name = "numpy", specifier = ">=2.4.4" },
-    { name = "open-clip-torch", specifier = ">=3.3.0" },
-    { name = "open3d", specifier = ">=0.19.0" },
-    { name = "openai", specifier = ">=2.31.0" },
-    { name = "plotly", specifier = ">=6.7.0" },
-    { name = "plyfile", specifier = ">=1.1.3" },
-    { name = "pyliblzfse", specifier = ">=0.4.1" },
-    { name = "pypng", specifier = ">=0.20220715.0" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "rerun-sdk", specifier = ">=0.31.2" },
-    { name = "scipy", specifier = ">=1.17.1" },
-    { name = "supervision", specifier = ">=0.27.0.post2" },
-    { name = "torch", specifier = ">=2.11.0" },
-    { name = "torchvision", specifier = ">=0.26.0" },
-    { name = "tqdm", specifier = ">=4.67.3" },
-    { name = "transformers", specifier = ">=5.5.3" },
-    { name = "trimesh", specifier = ">=4.11.5" },
-    { name = "tyro", specifier = ">=1.0.12" },
-    { name = "ultralytics", specifier = ">=8.4.37" },
-    { name = "vllm", specifier = ">=0.2.5" },
-    { name = "wandb", specifier = ">=0.18.3" },
-    { name = "weave", specifier = ">=0.34.0" },
-]
-
-[[package]]
 name = "ninja"
 version = "1.13.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4090,6 +4011,87 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/52/52/e57eceff0e342a1f50e274264ed47497b59e6a4e3118808ee58ddda7b74a/scipy-1.17.1-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:a77cbd07b940d326d39a1d1b37817e2ee4d79cb30e7338f3d0cddffae70fcaa2", size = 37682317, upload-time = "2026-02-23T00:22:18.513Z" },
     { url = "https://files.pythonhosted.org/packages/11/2f/b29eafe4a3fbc3d6de9662b36e028d5f039e72d345e05c250e121a230dd4/scipy-1.17.1-cp314-cp314t-win_amd64.whl", hash = "sha256:eb092099205ef62cd1782b006658db09e2fed75bffcae7cc0d44052d8aa0f484", size = 37345327, upload-time = "2026-02-23T00:22:24.442Z" },
     { url = "https://files.pythonhosted.org/packages/07/39/338d9219c4e87f3e708f18857ecd24d22a0c3094752393319553096b98af/scipy-1.17.1-cp314-cp314t-win_arm64.whl", hash = "sha256:200e1050faffacc162be6a486a984a0497866ec54149a01270adc8a59b7c7d21", size = 25489165, upload-time = "2026-02-23T00:22:29.563Z" },
+]
+
+[[package]]
+name = "semantic-space"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "accelerate" },
+    { name = "cmake" },
+    { name = "dill" },
+    { name = "distinctipy" },
+    { name = "faiss-cpu" },
+    { name = "h5py" },
+    { name = "huggingface-hub" },
+    { name = "hydra-core" },
+    { name = "imageio" },
+    { name = "kornia" },
+    { name = "matplotlib" },
+    { name = "natsort" },
+    { name = "ninja" },
+    { name = "numpy" },
+    { name = "open-clip-torch" },
+    { name = "open3d" },
+    { name = "openai" },
+    { name = "plotly" },
+    { name = "plyfile" },
+    { name = "pyliblzfse" },
+    { name = "pypng" },
+    { name = "pyyaml" },
+    { name = "rerun-sdk" },
+    { name = "scipy" },
+    { name = "supervision" },
+    { name = "torch" },
+    { name = "torchvision" },
+    { name = "tqdm" },
+    { name = "transformers" },
+    { name = "trimesh" },
+    { name = "tyro" },
+    { name = "ultralytics" },
+    { name = "vllm" },
+    { name = "wandb" },
+    { name = "weave" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "accelerate", specifier = ">=1.13.0" },
+    { name = "cmake", specifier = ">=4.3.1" },
+    { name = "dill", specifier = ">=0.4.1" },
+    { name = "distinctipy", specifier = ">=1.3.4" },
+    { name = "faiss-cpu", specifier = ">=1.13.2" },
+    { name = "h5py", specifier = ">=3.16.0" },
+    { name = "huggingface-hub", specifier = ">=1.10.1" },
+    { name = "hydra-core", specifier = ">=1.3.2" },
+    { name = "imageio", specifier = ">=2.37.3" },
+    { name = "kornia", specifier = ">=0.8.2" },
+    { name = "matplotlib", specifier = ">=3.10.8" },
+    { name = "natsort", specifier = ">=8.4.0" },
+    { name = "ninja", specifier = ">=1.13.0" },
+    { name = "numpy", specifier = ">=2.4.4" },
+    { name = "open-clip-torch", specifier = ">=3.3.0" },
+    { name = "open3d", specifier = ">=0.19.0" },
+    { name = "openai", specifier = ">=2.31.0" },
+    { name = "plotly", specifier = ">=6.7.0" },
+    { name = "plyfile", specifier = ">=1.1.3" },
+    { name = "pyliblzfse", specifier = ">=0.4.1" },
+    { name = "pypng", specifier = ">=0.20220715.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "rerun-sdk", specifier = ">=0.31.2" },
+    { name = "scipy", specifier = ">=1.17.1" },
+    { name = "supervision", specifier = ">=0.27.0.post2" },
+    { name = "torch", specifier = ">=2.11.0" },
+    { name = "torchvision", specifier = ">=0.26.0" },
+    { name = "tqdm", specifier = ">=4.67.3" },
+    { name = "transformers", specifier = ">=5.5.3" },
+    { name = "trimesh", specifier = ">=4.11.5" },
+    { name = "tyro", specifier = ">=1.0.12" },
+    { name = "ultralytics", specifier = ">=8.4.37" },
+    { name = "vllm", specifier = ">=0.2.5" },
+    { name = "wandb", specifier = ">=0.18.3" },
+    { name = "weave", specifier = ">=0.34.0" },
 ]
 
 [[package]]

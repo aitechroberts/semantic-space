@@ -1131,7 +1131,7 @@ def make_detection_list_from_pcd_and_gobs(
             # These are for the entire 3D object
             'pcd': obj_pcds_and_bboxes[mask_idx]['pcd'],
             'bbox': obj_pcds_and_bboxes[mask_idx]['bbox'],
-            'clip_ft': to_tensor(gobs['image_feats'][mask_idx]),
+            'clip_ft': to_tensor(gobs['image_feats'][mask_idx]) if gobs.get('image_feats') is not None else None,
             'vlm_vit_ft': to_tensor(gobs['vlm_vit_feats'][mask_idx]) if gobs.get('vlm_vit_feats') is not None else None,
             'vlm_proj_ft': to_tensor(gobs['vlm_proj_feats'][mask_idx]) if gobs.get('vlm_proj_feats') is not None else None,
             # 'text_ft': to_tensor(gobs['text_feats'][mask_idx]),
