@@ -291,9 +291,12 @@ def merge_obj2_into_obj1(obj1, obj2, downsample_voxel_size, dbscan_remove_noise,
     tracker.track_merge(obj1, obj2)
     
     # Attributes to be explicitly handled
-    extend_attributes = ['image_idx', 'mask_idx', 'color_path', 'class_id', 'mask', 'xyxy', 'conf', 'contain_number', 'captions']
+    extend_attributes = ['image_idx', 'color_path', 'class_id', 'captions']
     add_attributes = ['num_detections', 'num_obj_in_class']
-    skip_attributes = ['id', 'class_name', 'is_background', 'new_counter', 'curr_obj_num', 'inst_color']  # 'inst_color' just keeps obj1's
+    skip_attributes = [
+        'id', 'class_name', 'is_background', 'new_counter', 'curr_obj_num', 'inst_color',
+        'mask', 'mask_idx', 'xyxy', 'conf', 'contain_number', 'caption',
+    ]
     custom_handled = ['pcd', 'bbox', 'clip_ft', 'text_ft', 'n_points', 'vlm_vit_ft', 'vlm_proj_ft', 'per_view_records', 'crop_path']
 
     # Check for unhandled keys and throw an error if there are
@@ -314,12 +317,6 @@ def merge_obj2_into_obj1(obj1, obj2, downsample_voxel_size, dbscan_remove_noise,
     for attr in add_attributes:
         if attr in obj1 and attr in obj2:
             obj1[attr] += obj2[attr]
-
-    # Handling 'caption'
-    if 'caption' in obj1 and 'caption' in obj2:
-        # n_obj1_det = obj1['num_detections']
-        for key, value in obj2['caption'].items():
-            obj1['caption'][key + n_obj1_det] = value
 
     # merge pcd and bbox
     obj1['pcd'] += obj2['pcd']
@@ -533,53 +530,30 @@ def compute_overlap_matrix_general(objects_a: MapObjectList, objects_b = None, d
     len_b = len(objects_b)
     overlap_matrix = np.zeros((len_a, len_b))
 
-    # Convert the point clouds into numpy arrays and then into FAISS indices for efficient search
-    points_a = [np.asarray(obj['pcd'].points, dtype=np.float32) for obj in objects_a] # m arrays
-    indices_a = [faiss.IndexFlatL2(points_a_arr.shape[1]) for points_a_arr in points_a] # m indices
-
-    # Add the points from the numpy arrays to the corresponding FAISS indices
-    for idx_a, points_a_arr in zip(indices_a, points_a):
-        idx_a.add(points_a_arr)
-
-    points_b = [np.asarray(obj['pcd'].points, dtype=np.float32) for obj in objects_b] # n arrays
-
     bbox_a = objects_a.get_stacked_values_torch('bbox')
     bbox_b = objects_b.get_stacked_values_torch('bbox')
-    
-    # def compute_3d_iou_accurate_batch_safe(bbox1, bbox2):
-    #     try:
-    #         return compute_3d_iou_accurate_batch(bbox1, bbox2)
-    #     except ValueError as e:
-    #         if str(e) == "Plane vertices are not coplanar":
-    #             # Log the error or handle it in a way that's appropriate for your application
-    #             print("Non-coplanar boxes detected; returning zero IoU.")
-    #             return torch.zeros((bbox1.size(0), bbox2.size(0)))  # Return a zero IoU matrix
-    #         else:
-    #             raise  # Re-raise other unexpected exceptions
-    # ious = compute_3d_iou_accurate_batch_safe(bbox_a, bbox_b)        
-    
-    ious = compute_3d_iou_accurate_batch(bbox_a, bbox_b) # (m, n)
+    ious = compute_3d_iou_accurate_batch(bbox_a, bbox_b)  # (len_a, len_b)
+    del bbox_a, bbox_b
 
+    threshold_sq = downsample_voxel_size ** 2
 
-    # Compute the pairwise overlaps
     for idx_a in range(len_a):
-        for idx_b in range(len_b):
+        pts_a = np.asarray(objects_a[idx_a]['pcd'].points, dtype=np.float32)
+        index_a = faiss.IndexFlatL2(3)
+        index_a.add(pts_a)
 
-            # skip same object comparison if same_objects is True
+        for idx_b in range(len_b):
             if same_objects and idx_a == idx_b:
                 continue
-
-            # skip if the boxes do not overlap at all
-            if ious[idx_a,idx_b] < 1e-6:
+            if ious[idx_a, idx_b] < 1e-6:
                 continue
 
-            # get the distance of the nearest neighbor of
-            # each point in points_b[idx_b] to the points_a[idx_a]
-            D, I = indices_a[idx_a].search(points_b[idx_b], 1) 
-            overlap = (D < downsample_voxel_size ** 2).sum() # D is the squared distance
+            pts_b = np.asarray(objects_b[idx_b]['pcd'].points, dtype=np.float32)
+            D, _ = index_a.search(pts_b, 1)
+            overlap_matrix[idx_a, idx_b] = (D < threshold_sq).sum() / len(pts_b)
+            del pts_b
 
-            # Calculate the ratio of points within the threshold
-            overlap_matrix[idx_a, idx_b] = overlap / len(points_b[idx_b])
+        del index_a, pts_a
 
     return overlap_matrix
 
@@ -628,7 +602,7 @@ def merge_overlap_objects(
             # )
             text_sim = visual_sim
             if (visual_sim > merge_visual_sim_thresh) and (text_sim > merge_text_sim_thresh):
-                if kept_objects[j]:  # Check if the target object has not been merged into another
+                if kept_objects[i] and kept_objects[j]:
                     # Merge object i into object j
                     objects[j] = merge_obj2_into_obj1(
                         objects[j],

@@ -31,6 +31,8 @@ from semgraph.slam.slam_classes import DetectionList, MapEdgeMapping, MapObjectL
 
 logger = logging.getLogger(__name__)
 
+_MAX_PER_VIEW_RECORDS = 20
+
 
 # ---------------------------------------------------------------------------
 # Caption merging
@@ -264,6 +266,12 @@ def run_maintenance(
                 map_edges=None,
             )
 
+    for obj in objects:
+        pvr = obj.get("per_view_records")
+        if pvr and len(pvr) > _MAX_PER_VIEW_RECORDS:
+            pvr.sort(key=lambda r: r["n_points"], reverse=True)
+            obj["per_view_records"] = pvr[:_MAX_PER_VIEW_RECORDS]
+
     return objects, map_edges
 
 
@@ -277,12 +285,7 @@ def _prepare_detection_for_merge(det: dict, frame_idx: int, det_idx: int) -> dic
 
     det.setdefault("id", str(uuid.uuid4()))
     det.setdefault("image_idx", [frame_idx])
-    det.setdefault("mask_idx", [det_idx])
     det.setdefault("color_path", [""])
-    det.setdefault("mask", [])
-    det.setdefault("xyxy", [])
-    det.setdefault("conf", [])
-    det.setdefault("contain_number", [0])
     det.setdefault("captions", [""])
     det.setdefault("num_detections", 1)
     det.setdefault("num_obj_in_class", 1)
@@ -333,9 +336,12 @@ def build_map_incremental(frame_indices, paths, cfg):
     matched against accumulated objects, then maintenance is run
     periodically.  Order-dependent.
     """
+    import tracemalloc
     from tqdm import tqdm
     from semgraph.stages.paths import SerializedDetection
     from semgraph.io import load_frame_data, deserialize_detection
+
+    tracemalloc.start()
 
     objects = MapObjectList()
     map_edges = MapEdgeMapping(objects)
@@ -362,6 +368,17 @@ def build_map_incremental(frame_indices, paths, cfg):
         is_final = loop_idx == n_frames - 1
         objects, map_edges = run_maintenance(objects, map_edges, cfg, frame_idx, is_final)
 
+        if frame_idx % 5 == 0:
+            import psutil
+            rss = psutil.Process().memory_info().rss / 1024**2
+            print(f"[build_map] frame={frame_idx} objects={len(objects)} RSS={rss:.0f}MB")
+            snapshot = tracemalloc.take_snapshot()
+            top = snapshot.statistics('lineno')[:10]
+            print(f"[build_map] Top 10 memory allocations at frame {frame_idx}:")
+            for stat in top:
+                print(f"  {stat}")
+
+    tracemalloc.stop()
     return objects, map_edges
 
 

@@ -63,7 +63,7 @@ class MappingTracker:
         
     def track_merge(self, obj1, obj2):
         self.total_merges += 1
-        self.merge_list.append((obj1, obj2))
+        self.merge_list.append((obj1.get('id'), obj2.get('id')))
         
     def increment_total_merges(self, count):
         self.total_merges += count

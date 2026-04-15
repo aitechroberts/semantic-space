@@ -214,7 +214,7 @@ def load_models(cfg: Any, obj_classes: Any = None) -> DetectionModels:
     detector = None
     if seg_backend.startswith("detect_"):
         detector_type = cfg.get("detector_type", "yoloe")
-        detector_name = cfg.get("detector_name", None)
+        detector_name = cfg.get("detector_name", None) or None
 
         load_kwargs: dict[str, Any] = {}
         if obj_classes is not None:
