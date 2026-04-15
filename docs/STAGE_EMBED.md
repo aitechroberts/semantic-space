@@ -20,9 +20,10 @@ Hydra Config (encoder_type + encoder_name)
         │
         ▼
   EmbeddingEncoder ABC
-    .encode_images(crops) → (N, D) float32
-    .encode_texts(texts)  → (N, D) float32 | None
-    .feat_dim             → int
+    .encode_images(crops)       → (N, D) float32
+    .encode_texts(texts)        → (N, D) float32 | None
+    .has_aligned_text_space     → bool  (gate for Path B retrieval)
+    .feat_dim                   → int
 ```
 
 This mirrors the existing `get_detector()` / `get_segmenter()` factories in
@@ -120,17 +121,36 @@ the existing `VLMEncoderExtractor` in `semgraph/utils/vlms/vlm_encoder.py`.
 | Aspect | Detail |
 |--------|--------|
 | Library | `transformers` (model-specific classes) via `VLMEncoderExtractor` |
-| Loading | Full VLM loaded, then LLM decoder deleted to save VRAM |
+| Loading | Full VLM loaded, then LLM decoder deleted to save VRAM (embedding table + tokenizer retained) |
 | Image encoding | `extractor.encode_crops()` returning `(vit_feats, proj_feats)` |
-| Text encoding | **None** — VLM vision towers have no text encoder |
+| Text encoding | When `use_proj=True`: mean-pooled LLM embedding table lookup, L2-normalized. When `use_proj=False`: `None` |
 | `feat_dim` source | `encoder.config.hidden_size` (primary), `vision_config.hidden_size` (nested), dummy forward (fallback) |
 | Default precision | `float16` or `bfloat16` (auto-detected based on GPU support) |
-| Text support | No |
+| `has_aligned_text_space` | `True` when `use_proj=True`, `False` otherwise |
+| Text support | Conditional — requires `use_proj=True` |
 
 **`use_proj` flag**: When `True` and the model has a fused merger (Qwen
 family), returns projected features instead of raw ViT features. This
 enables comparing vit-driven vs projection-driven maps in embedding drift
-studies.
+studies. It also enables text encoding: with `use_proj=True`, both image
+features (post-merger) and text embeddings (from the LLM embedding table)
+live in the LLM input space, so `has_aligned_text_space` returns `True`
+and Path B retrieval is available. With `use_proj=False`, image features
+are in the ViT's native space while text embeddings are in the LLM input
+space — different spaces, so `has_aligned_text_space` returns `False`.
+
+**Extraction details**: During loading, the LLM decoder is deleted but
+the LLM's input embedding table (`nn.Embedding`) and tokenizer are
+retained. The embedding table is tiny relative to the decoder stack
+(e.g. ~50 MB for Qwen3-VL-2B vs ~3 GB for the decoder). Text encoding
+uses raw embedding table lookup with masked mean pooling — no transformer
+layers, no contextual processing. This is a shallow representation
+sufficient for same-space cosine retrieval but without syntactic
+understanding.
+
+A dimension assertion at construction verifies that
+`embed_table.embedding_dim == feat_dim` when `use_proj=True`, catching
+mismatches before they surface at eval time.
 
 **Supported VLM families**: Qwen3-VL, Qwen2.5-VL, Qwen2-VL, InternVL,
 CogVLM/CogVLM2, Ovis, Gemma 3, LLaVA/LLaVA-OneVision, MiniCPM-V,
@@ -166,6 +186,34 @@ embed:
 | `mode` | str | `phase_a` (per-frame) or `re_embed` (Phase B oracle re-embedding) |
 | `use_sam_fusion` | bool | Re-run SAM on each crop and average with base feature |
 
+### Eval config fields (`batch_vlm_mapping_api.yaml`)
+
+```yaml
+eval:
+  encoder: ${oc.env:EVAL_ENCODER,laion_CLIP-ViT-bigG-14-laion2B-39B-b160k}
+  encoder_type: ${oc.env:EVAL_ENCODER_TYPE,hf_clip}
+  text_encoder_type: ${oc.env:EVAL_TEXT_ENCODER_TYPE,}   # optional override
+  text_encoder_name: ${oc.env:EVAL_TEXT_ENCODER,}         # optional override
+  questions: ${oc.env:EVAL_QUESTIONS,}                    # path to questions.json
+  vlm: ${oc.env:EVAL_VLM,Qwen_Qwen3-VL-2B-Instruct}
+  gt_labels: config/eval_1687_labels.txt
+  categories: config/grouped_17_categories.json
+  use_subgraph: !!bool false
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `encoder` | str | Image encoder name (slug format, `/` → `_`) for loading variant features |
+| `encoder_type` | str | Backend key for loading the image encoder via `get_encoder()` |
+| `text_encoder_type` | str | Optional: backend key for a separate text encoder (frozen-encoder pairing) |
+| `text_encoder_name` | str | Optional: model ID for the separate text encoder |
+| `questions` | str | Path to a Space3D-Bench `questions.json` file for retrieval evaluation |
+
+When `text_encoder_type` and `text_encoder_name` are both set, a separate
+text encoder is loaded via `get_encoder()` and used for query embedding
+instead of the image encoder's own `encode_texts()`. When not set, the
+image encoder handles both image and text encoding.
+
 ### Environment variable overrides
 
 | Variable | Hydra field | Example |
@@ -173,6 +221,10 @@ embed:
 | `EMBED_ENCODER_TYPE` | `embed.encoder_type` | `hf_siglip` |
 | `EMBED_ENCODER` | `embed.encoder_name` | `google/siglip2-so400m-patch14-384` |
 | `EMBED_DTYPE` | `embed.dtype` | `bfloat16` |
+| `EVAL_ENCODER_TYPE` | `eval.encoder_type` | `vlm_vision` |
+| `EVAL_TEXT_ENCODER_TYPE` | `eval.text_encoder_type` | `hf_siglip` |
+| `EVAL_TEXT_ENCODER` | `eval.text_encoder_name` | `google/siglip2-so400m-patch14-384` |
+| `EVAL_QUESTIONS` | `eval.questions` | `data/room_0/questions.json` |
 
 ### `encoder_name` format by type
 
@@ -290,7 +342,62 @@ extraction during detection. Documenting this to prevent confusion.
 
 Use this when comparing VLM projection-head embeddings vs raw ViT features
 for the same VLM. Only Qwen-family models produce both — for all other VLM
-families, `proj_feats` is `None` regardless of this flag.
+families, `proj_feats` is `None` regardless of this flag. When
+`use_proj=True`, text encoding is also enabled (see the `vlm_vision`
+section above).
+
+### Retrieval evaluation (Path B)
+
+`evaluate_retrieval` in `eval.py` performs cosine retrieval of query text
+embeddings against per-object image features from a `VariantRecord`:
+
+1. Load the text encoder (either the image encoder itself, or a separate
+   text encoder override from config).
+2. Gate on `encoder.has_aligned_text_space` — if `False`, Path B is N/A.
+3. For each query, encode with `encode_texts([question])`, compute cosine
+   similarity against `clip_ft_weighted_avg` (primary) and `clip_ft_best`
+   (secondary), rank objects, check top-K matches.
+4. Report recall@1, recall@5, recall@10.
+
+The secondary metric (best-view retrieval) tests whether multi-view
+aggregation helps or hurts discriminability.
+
+### Frozen-encoder pairing
+
+The text encoder override enables three experimental conditions:
+
+```
+Condition                                        What it measures
+────────────────────────────────────────────────────────────────────
+Standalone SigLIP (image + text)                 Contrastive baseline
+PaliGemma-extracted + standalone SigLIP text     Frozen-encoder verification
+InternVL-extracted + pretrained InternViT text   Embedding drift
+```
+
+The first two should produce identical Path B scores if the ViT is truly
+frozen during VLM fine-tuning — any difference is a bug in the extraction
+pipeline. The third diverges by design, and the magnitude of divergence is
+the drift measurement.
+
+```bash
+# Frozen-encoder verification:
+EVAL_ENCODER_TYPE=vlm_vision \
+EVAL_ENCODER=google/paligemma2-3b-mix-224 \
+EVAL_TEXT_ENCODER_TYPE=hf_siglip \
+EVAL_TEXT_ENCODER=google/siglip2-so400m-patch14-384 \
+EVAL_QUESTIONS=data/room_0/questions.json \
+  python -m semgraph.stages.eval ...
+```
+
+### Experimental matrix
+
+```
+Encoder              use_proj  Path_A  Path_B  Measures
+CLIP/SigLIP/OpenCLIP N/A       Yes     Yes     Contrastive baseline
+VLM                  false     Yes     N/A     Raw ViT for map building
+VLM                  true      Yes     Yes     Post-merger for both merging + retrieval
+VLM + text override  true      Yes     Yes     Frozen-encoder drift measurement
+```
 
 ---
 
@@ -310,6 +417,13 @@ families, `proj_feats` is `None` regardless of this flag.
        @property
        def feat_dim(self) -> int:
            return self._feat_dim
+
+       @property
+       def has_aligned_text_space(self) -> bool:
+           # Default is True (inherited from ABC).
+           # Override to False if encode_texts() returns None or
+           # text embeddings are in a different space than image embeddings.
+           return True
 
        def encode_images(self, crops):
            # Return (N, D) float32 L2-normalized numpy
@@ -354,6 +468,7 @@ families, `proj_feats` is `None` regardless of this flag.
 | ViT-H/14 (OpenCLIP) | `open_clip` | 1024 | ~2.5 GB |
 | Qwen3-VL-2B vision tower | `vlm_vision` | 1536 | ~1.2 GB |
 
-All values approximate. VLM vision towers strip the LLM decoder and
-projector at load time, keeping only the ViT — actual VRAM is much less
-than the full VLM.
+All values approximate. VLM vision towers strip the LLM decoder at load
+time, keeping only the ViT, the LLM embedding table, and the tokenizer —
+actual VRAM is much less than the full VLM. The embedding table adds
+minimal overhead (e.g. ~50 MB for Qwen3-VL-2B).

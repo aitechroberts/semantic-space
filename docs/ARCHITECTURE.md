@@ -113,7 +113,7 @@ Uses GradSLAMDataset to load RGBD frames with known camera intrinsics and poses.
 Two sub-modes controlled by `segmentation_backend`:
 
 - **gt_instances** (object-first): Iterates over GT mesh instances. Selects best camera views per instance. Skips 2D detection entirely — point clouds come directly from mesh vertices.
-- **sam_auto / yolo_sam** (frame-first): Iterates over camera frames like trajectory. 2D masks are lifted to 3D by projecting mesh vertices into the frame and keeping those inside each mask.
+- **sam_auto / detect_sam** (frame-first): Iterates over camera frames like trajectory. 2D masks are lifted to 3D by projecting mesh vertices into the frame and keeping those inside each mask.
 
 ### sparse
 
@@ -127,13 +127,11 @@ Detection and segmentation are two independent, composable jobs implemented as A
 |---|---|---|---|
 | `sam_auto` (default) | None | SAMSegmenter (auto) | Class-agnostic segment-everything (SAM 2.1) |
 | `sam3_auto` | None | SAM3Segmenter (auto) | Class-agnostic segment-everything (SAM 3) |
-| `yolo_sam` | YOLOWorldDetector | SAMSegmenter | Closed-vocabulary detection + SAM 2.1 mask |
-| `yoloe_sam` | YOLOEDetector | SAMSegmenter | Open-vocabulary YOLOE + SAM 2.1 mask |
-| `florence2_sam` | Florence2Detector | SAMSegmenter | Florence-2 detection + SAM 2.1 mask |
-| `yolo_sam3` | YOLOWorldDetector | SAM3Segmenter | Closed-vocabulary detection + SAM 3 mask |
-| `yoloe_sam3` | YOLOEDetector | SAM3Segmenter | Open-vocabulary YOLOE + SAM 3 mask |
-| `florence2_sam3` | Florence2Detector | SAM3Segmenter | Florence-2 detection + SAM 3 mask |
+| `detect_sam` | Any (via `detector_type`) | SAMSegmenter | Detector + SAM 2.1 box-prompted masks |
+| `detect_sam3` | Any (via `detector_type`) | SAM3Segmenter | Detector + SAM 3 box-prompted masks |
 | `gt_instances` | (bypassed) | (bypassed) | Ground-truth mesh instances |
+
+The detector is selected independently via `detector_type` (`yoloe`, `yolo_world`, `florence2`, `gdino`) + `detector_name` (weights/model ID), mirroring `encoder_type` + `encoder_name`. Legacy strings (`yolo_sam`, `yoloe_sam`, etc.) are auto-shimmed with a deprecation warning.
 
 `detect.py` composes a `Detector` (optional) and a `Segmenter` via factory functions. No stage script imports model libraries (ultralytics, etc.) directly. See [STAGE_DETECTION.md](STAGE_DETECTION.md) for the full detection architecture.
 

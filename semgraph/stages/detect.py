@@ -15,7 +15,6 @@ Standalone usage::
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -111,6 +110,11 @@ def filter_sam_auto_masks(
 # Models container
 # ---------------------------------------------------------------------------
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 @dataclass
 class DetectionModels:
     """Holds detection/segmentation backends — no encoders or VLMs."""
@@ -118,46 +122,65 @@ class DetectionModels:
     segmenter: Segmenter | None = None
     seg_backend: str = "sam_auto"
 
+    @property
+    def has_class_labels(self) -> bool:
+        """True when a detector is present and producing class labels."""
+        return self.detector is not None
 
-_HF_WEIGHT_REPOS: dict[str, str] = {
-    "sam3.pt": "facebook/sam3",
+    @property
+    def is_vocab_driven(self) -> bool:
+        """True when the detector maps detections to a fixed vocabulary."""
+        return self.detector is not None and self.detector.vocab_driven
+
+    @property
+    def vocabulary(self) -> list[str] | None:
+        """The detector's class vocabulary, if any."""
+        return self.detector.classes if self.detector is not None else None
+
+
+# ---------------------------------------------------------------------------
+# Backend / legacy mapping
+# ---------------------------------------------------------------------------
+
+_SEGMENTER_MAP: dict[str, tuple[str, str]] = {
+    "sam_auto":    ("sam",  "sam2.1_b.pt"),
+    "sam3_auto":   ("sam3", "sam3.pt"),
+    "detect_sam":  ("sam",  "sam2.1_b.pt"),
+    "detect_sam3": ("sam3", "sam3.pt"),
+}
+
+_LEGACY_BACKEND_MAP: dict[str, tuple[str, str]] = {
+    "yolo_sam":       ("detect_sam",  "yolo_world"),
+    "yoloe_sam":      ("detect_sam",  "yoloe"),
+    "florence2_sam":  ("detect_sam",  "florence2"),
+    "yolo_sam3":      ("detect_sam3", "yolo_world"),
+    "yoloe_sam3":     ("detect_sam3", "yoloe"),
+    "florence2_sam3": ("detect_sam3", "florence2"),
 }
 
 
-def _resolve_weights(filename: str) -> str:
-    """Resolve model weights path.
+def _apply_legacy_shim(
+    seg_backend: str, cfg: Any,
+) -> tuple[str, Any]:
+    """Map deprecated backend strings to the new (detect_* + detector_type) form."""
+    if seg_backend not in _LEGACY_BACKEND_MAP:
+        return seg_backend, cfg
 
-    Search order:
-    1. ``$CKPT_DIR/<filename>``
-    2. Current working directory (bare *filename*)
-    3. HuggingFace hub cache (if *filename* is mapped in ``_HF_WEIGHT_REPOS``)
-    4. Fall back to bare *filename* (lets ultralytics try its own download).
-    """
-    ckpt_dir = os.environ.get("CKPT_DIR", "")
-    if ckpt_dir and (Path(ckpt_dir) / filename).exists():
-        return str(Path(ckpt_dir) / filename)
-    if Path(filename).exists():
-        return filename
-    if filename in _HF_WEIGHT_REPOS:
+    new_backend, det_type = _LEGACY_BACKEND_MAP[seg_backend]
+    logger.warning(
+        "segmentation_backend='%s' is deprecated. "
+        "Use segmentation_backend='%s' detector_type='%s' instead.",
+        seg_backend, new_backend, det_type,
+    )
+
+    if not cfg.get("detector_type"):
         try:
-            from huggingface_hub import hf_hub_download
-            path = hf_hub_download(repo_id=_HF_WEIGHT_REPOS[filename], filename=filename)
-            return str(path)
-        except Exception:
-            pass
-    return filename
+            from omegaconf import OmegaConf
+            OmegaConf.update(cfg, "detector_type", det_type)
+        except (ImportError, Exception):
+            cfg["detector_type"] = det_type
 
-
-_BACKEND_SPEC: dict[str, dict[str, Any]] = {
-    "sam_auto":      {"detector": None,       "det_weights": None,                        "segmenter": "sam",  "seg_weights": "sam2.1_b.pt"},
-    "sam3_auto":     {"detector": None,       "det_weights": None,                        "segmenter": "sam3", "seg_weights": "sam3.pt"},
-    "yolo_sam":      {"detector": "yolo_world","det_weights": "yolov8l-worldv2.pt",       "segmenter": "sam",  "seg_weights": "sam2.1_b.pt"},
-    "yoloe_sam":     {"detector": "yoloe",    "det_weights": "yoloe-v8l-seg.pt",          "segmenter": "sam",  "seg_weights": "sam2.1_b.pt"},
-    "florence2_sam":  {"detector": "florence2", "det_weights": "microsoft/Florence-2-large","segmenter": "sam",  "seg_weights": "sam2.1_b.pt"},
-    "yolo_sam3":     {"detector": "yolo_world","det_weights": "yolov8l-worldv2.pt",       "segmenter": "sam3", "seg_weights": "sam3.pt"},
-    "yoloe_sam3":    {"detector": "yoloe",    "det_weights": "yoloe-v8l-seg.pt",          "segmenter": "sam3", "seg_weights": "sam3.pt"},
-    "florence2_sam3": {"detector": "florence2", "det_weights": "microsoft/Florence-2-large","segmenter": "sam3", "seg_weights": "sam3.pt"},
-}
+    return new_backend, cfg
 
 
 def load_models(cfg: Any, obj_classes: Any = None) -> DetectionModels:
@@ -166,34 +189,43 @@ def load_models(cfg: Any, obj_classes: Any = None) -> DetectionModels:
     Weight path resolution and config parsing happen here — model classes
     never see the Hydra config.
     """
+    from semgraph.detection import get_detector, get_segmenter
+    from semgraph.detection.base import resolve_weights
+
     seg_backend = cfg.get("segmentation_backend", "sam_auto")
+    seg_backend, cfg = _apply_legacy_shim(seg_backend, cfg)
 
     if seg_backend == "gt_instances":
         return DetectionModels(seg_backend=seg_backend)
 
-    from semgraph.detection import get_detector, get_segmenter
-
-    spec = _BACKEND_SPEC.get(seg_backend)
-    if spec is None:
+    if seg_backend not in _SEGMENTER_MAP:
         raise ValueError(
             f"Unknown segmentation_backend '{seg_backend}'. "
-            f"Valid options: {', '.join(list(_BACKEND_SPEC) + ['gt_instances'])}"
+            f"Valid options: {', '.join(list(_SEGMENTER_MAP) + ['gt_instances'])}"
         )
 
     device = cfg.get("device", "cuda")
 
-    segmenter = get_segmenter(spec["segmenter"])
-    seg_weights = cfg.get("seg_weights_override", spec["seg_weights"])
-    segmenter.load(weights=_resolve_weights(seg_weights), device=device)
+    seg_type, seg_default_weights = _SEGMENTER_MAP[seg_backend]
+    segmenter = get_segmenter(seg_type)
+    seg_weights = cfg.get("seg_weights_override", seg_default_weights)
+    segmenter.load(weights=resolve_weights(seg_weights), device=device)
 
-    det_name = spec["detector"]
-    detector = get_detector(det_name)
-    if detector is not None:
-        weights = _resolve_weights(spec["det_weights"])
+    detector = None
+    if seg_backend.startswith("detect_"):
+        detector_type = cfg.get("detector_type", "yoloe")
+        detector_name = cfg.get("detector_name", None)
+
         load_kwargs: dict[str, Any] = {}
-        if obj_classes is not None and det_name in ("yolo_world", "yoloe"):
+        if obj_classes is not None:
             load_kwargs["classes"] = obj_classes.get_classes_arr()
-        detector.load(weights=weights, device=device, **load_kwargs)
+
+        detector = get_detector(
+            detector_type=detector_type,
+            detector_name=detector_name,
+            device=device,
+            **load_kwargs,
+        )
 
     return DetectionModels(detector=detector, segmenter=segmenter, seg_backend=seg_backend)
 

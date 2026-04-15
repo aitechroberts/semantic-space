@@ -53,14 +53,22 @@ contain_mismatch_penalty: 0.5
 #                        "sparse"     (DUSt3R RGB-only point map lifting)
 pipeline_mode: ${oc.env:PIPELINE_MODE,trajectory}
 
-# Segmentation backend: "yolo_sam"       (closed-vocab YOLO-World + SAM box-prompted)
-#                       "sam_auto"       (class-agnostic SAM automatic mask generation)
+# Segmentation backend: "sam_auto"       (class-agnostic SAM 2.1 automatic mask generation)
+#                       "sam3_auto"      (class-agnostic SAM 3 automatic mask generation)
+#                       "detect_sam"     (detector via detector_type + SAM 2.1 box-prompted)
+#                       "detect_sam3"    (detector via detector_type + SAM 3 box-prompted)
 #                       "gt_instances"   (ground-truth instance labels from mesh — gt_mesh mode only)
 segmentation_backend: sam_auto
 
-# Selection criteria on the 2D masks (used by both backends)
+# Detector registry (only used when segmentation_backend starts with detect_)
+# detector_type selects the backend; detector_name selects weights/model ID.
+# When detector_name is null the default weights for that type are used.
+detector_type: ${oc.env:DETECTOR_TYPE,yoloe}        # yoloe | yolo_world | florence2 | gdino
+detector_name: ${oc.env:DETECTOR_NAME,}             # null = use default weights for detector_type
+
+# Selection criteria on the 2D masks (used by all backends)
 mask_area_threshold: 25 # mask with pixel area less than this will be skipped
-mask_conf_threshold: 0.25 # mask with lower confidence score will be skipped (yolo_sam only)
+mask_conf_threshold: 0.25 # confidence floor; semantics vary: SAM auto → IoU score, detect_* → detector confidence, Florence-2 → hardcoded 1.0 (no-op)
 max_bbox_area_ratio: 0.9 # boxes with larger areas than this will be skipped
 
 # SAM automatic mode filter parameters (sam_auto backend only)

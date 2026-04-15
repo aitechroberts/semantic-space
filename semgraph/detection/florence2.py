@@ -129,3 +129,7 @@ class Florence2Detector(Detector):
             class_labels=class_labels,
             classes=classes,
         )
+
+    @property
+    def vocab_driven(self) -> bool:
+        return False

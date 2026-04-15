@@ -146,7 +146,13 @@ def update_map(
     )
 
     seg_backend = cfg.get("segmentation_backend", "sam_auto")
-    if seg_backend == "yolo_sam":
+    if seg_backend.startswith("detect_"):
+        # Majority-vote relabeling for all detector-first backends.
+        # NOTE: This assumes class_id values index into the global
+        # ObjectClasses vocabulary, which is true for vocab-driven detectors
+        # (YOLOE, YOLO-World, GroundingDINO) but not for Florence-2 whose
+        # class_ids index per-frame ad-hoc vocabularies.  A full fix would
+        # require voting on label strings rather than integer IDs.
         from semgraph.utils.general_utils import ObjectClasses, cfg_to_dict
         vocab_cfg = cfg_to_dict(cfg)
         obj_classes = ObjectClasses(

@@ -62,6 +62,7 @@ def stage_paths(cfg: Any) -> dict[str, Path]:
         "variants":      stages / "variants",
         "assembled":     stages / "assembled",
         "eval":          stages / "eval",
+        "geo_eval":      stages / "geo_eval",
         "exp_out":       _build_exp_path(base, scene, cfg.exp_suffix),
     }
 

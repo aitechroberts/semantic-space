@@ -1,6 +1,6 @@
 # Stage A1: Detection Architecture
 
-> **Last updated:** 2026-04-10
+> **Last updated:** 2026-04-15
 >
 > Deep-dive reference for the detect stage. For the pipeline overview, see
 > [STAGED_PIPELINE.md](STAGED_PIPELINE.md). For the full package layout, see
@@ -36,24 +36,31 @@ Detection has two independent jobs:
    boxes from step 1. This is what SAM does.
 
 These two jobs are represented by two ABCs (`Detector` and `Segmenter`) that
-compose into a detection pipeline. The combination is configured, not coded:
+compose into a detection pipeline. The segmentation backend selects the
+segmenter; the detector is selected independently via `detector_type` +
+`detector_name`, mirroring `encoder_type` + `encoder_name` in the encoder
+registry (`semgraph/encoding/`).
 
 ```
-segmentation_backend    Detector              Segmenter
-────────────────────    ────────              ─────────
-"sam_auto"              None                  SAMSegmenter (auto mode)
-"sam3_auto"             None                  SAM3Segmenter (auto mode)
-"yolo_sam"              YOLOWorldDetector     SAMSegmenter (box-prompted)
-"yoloe_sam"             YOLOEDetector         SAMSegmenter (box-prompted)
-"florence2_sam"         Florence2Detector     SAMSegmenter (box-prompted)
-"yolo_sam3"             YOLOWorldDetector     SAM3Segmenter (box-prompted)
-"yoloe_sam3"            YOLOEDetector         SAM3Segmenter (box-prompted)
-"florence2_sam3"        Florence2Detector     SAM3Segmenter (box-prompted)
+segmentation_backend    Detector                              Segmenter
+────────────────────    ────────                              ─────────
+"sam_auto"              None                                  SAMSegmenter (auto mode)
+"sam3_auto"             None                                  SAM3Segmenter (auto mode)
+"detect_sam"            Any (via detector_type/detector_name) SAMSegmenter (box-prompted)
+"detect_sam3"           Any (via detector_type/detector_name) SAM3Segmenter (box-prompted)
 "gt_instances"          (bypasses detection — geometry backend provides raw_gobs)
+```
 
-Future:
-"rtdetr_sam"            RTDETRDetector        SAMSegmenter (box-prompted)
-"owlv2_sam"             OWLv2Detector         SAMSegmenter (box-prompted)
+The detector is selected by `detector_type` (which class) and `detector_name`
+(which weights/model ID):
+
+```
+detector_type     Detector class            Library        Default weights
+─────────────     ──────────────            ───────        ───────────────
+"yoloe"           YOLOEDetector             ultralytics    yoloe-v8l-seg.pt
+"yolo_world"      YOLOWorldDetector         ultralytics    yolov8l-worldv2.pt
+"florence2"       Florence2Detector         transformers   microsoft/Florence-2-large
+"gdino"           GroundingDINODetector     transformers   IDEA-Research/grounding-dino-base
 ```
 
 When `detector` is `None` (auto mode), the segmenter runs in
@@ -64,6 +71,11 @@ generates one mask per box.
 The `gt_instances` path bypasses detection entirely — the geometry backend
 builds `raw_gobs` from ground-truth mesh instances.
 
+**Legacy backend strings:** The old combined strings (`yolo_sam`,
+`yoloe_sam`, `florence2_sam`, etc.) are still accepted via a deprecation
+shim that maps them to `detect_sam`/`detect_sam3` + the appropriate
+`detector_type`.
+
 ---
 
 ## 2. Package Layout
@@ -71,10 +83,12 @@ builds `raw_gobs` from ground-truth mesh instances.
 ```
 semgraph/detection/
     __init__.py         # get_detector(), get_segmenter() factories + re-exports
-    base.py             # Detector ABC, Segmenter ABC, DetectionResult, SegmentationResult
+    base.py             # Detector ABC, Segmenter ABC, DetectionResult, SegmentationResult,
+                        #   resolve_weights(), _DETECTOR_DEFAULTS
     yolo_world.py       # YOLOWorldDetector (ultralytics YOLO-World v2)
     yoloe.py            # YOLOEDetector (ultralytics YOLOE, text-prompted)
     florence2.py        # Florence2Detector (HuggingFace Florence-2)
+    grounding_dino.py   # GroundingDINODetector (HuggingFace GroundingDINO)
     sam.py              # SAMSegmenter (ultralytics SAM 2.1, auto + box-prompted)
     sam3.py             # SAM3Segmenter (ultralytics SAM 3, auto + box-prompted)
 ```
@@ -92,6 +106,11 @@ uses the ABC interfaces. No stage script imports `ultralytics` directly.
 class Detector(ABC):
     def load(self, weights: str, device: str = "cuda", **kwargs) -> None: ...
     def detect(self, image_rgb: np.ndarray, *, color_path: Path | None = None) -> DetectionResult: ...
+
+    @property
+    def vocab_driven(self) -> bool: ...   # default: False
+    @property
+    def classes(self) -> list[str] | None: ...  # default: None
 ```
 
 `image_rgb` is the primary input (`(H, W, 3)` uint8). `color_path` is
@@ -102,12 +121,20 @@ HuggingFace models ignore it and work from the array.
 config parsing stay in `detect.py`'s `load_models()`. Model classes never
 import or depend on the pipeline config structure.
 
+**Properties:**
+
+| Property | Type | Meaning |
+|----------|------|---------|
+| `vocab_driven` | `bool` | `True` if the detector accepts a class vocabulary at load time and `class_id` values index into it. `False` for detectors like Florence-2 that produce ad-hoc labels per frame. |
+| `classes` | `list[str] \| None` | The class vocabulary the detector was loaded with, if any. |
+
 **`**kwargs` by implementation:**
 
 | Implementation | kwargs | Effect |
 |----------------|--------|--------|
 | `YOLOWorldDetector` | `classes: list[str]` | Calls `model.set_classes()` to set the detection vocabulary |
 | `YOLOEDetector` | `classes: list[str]` | Calls `model.set_classes()` to set the detection vocabulary |
+| `GroundingDINODetector` | `classes: list[str]` | Builds text prompt from class list (GroundingDINO is text-prompted) |
 | `Florence2Detector` | `task: str` | Override the default `<OD>` task prompt (e.g. `<DENSE_REGION_CAPTION>`) |
 
 ### Segmenter
@@ -338,18 +365,19 @@ When `segmentation_backend=gt_instances` with the `gt_mesh` geometry backend:
 
 | Model | Weights | Size | Loaded When |
 |-------|---------|------|-------------|
-| SAM 2.1 Base | `sam2.1_b.pt` | ~162 MB | `*_sam` backends |
-| SAM 3 | `sam3.pt` | ~3.5 GB | `*_sam3` backends |
-| YOLO-World v2 Large | `yolov8l-worldv2.pt` | ~800 MB | `yolo_sam` / `yolo_sam3` |
-| YOLOE v8-Large Seg | `yoloe-v8l-seg.pt` | ~800 MB | `yoloe_sam` / `yoloe_sam3` |
-| Florence-2 Large | `microsoft/Florence-2-large` | ~1.6 GB | `florence2_sam` / `florence2_sam3` |
+| SAM 2.1 Base | `sam2.1_b.pt` | ~162 MB | `sam_auto`, `detect_sam` |
+| SAM 3 | `sam3.pt` | ~3.5 GB | `sam3_auto`, `detect_sam3` |
+| YOLO-World v2 Large | `yolov8l-worldv2.pt` | ~800 MB | `detect_*` + `detector_type=yolo_world` |
+| YOLOE v8-Large Seg | `yoloe-v8l-seg.pt` | ~800 MB | `detect_*` + `detector_type=yoloe` |
+| Florence-2 Large | `microsoft/Florence-2-large` | ~1.6 GB | `detect_*` + `detector_type=florence2` |
+| GroundingDINO Base | `IDEA-Research/grounding-dino-base` | ~900 MB | `detect_*` + `detector_type=gdino` |
 
 No CLIP encoder, no VLM — detect.py is geometry-only.
 
-**Weight resolution:** `_resolve_weights()` in `detect.py` checks the
-`CKPT_DIR` environment variable first. If the file exists under `CKPT_DIR`,
-that path is used. Otherwise the bare filename is passed to ultralytics
-(which auto-downloads) or used as a HuggingFace model ID (which
+**Weight resolution:** `resolve_weights()` in `semgraph/detection/base.py`
+checks the `CKPT_DIR` environment variable first. If the file exists under
+`CKPT_DIR`, that path is used. Otherwise the bare filename is passed to
+ultralytics (which auto-downloads) or used as a HuggingFace model ID (which
 auto-downloads from the Hub).
 
 **Note:** SAM 3 weights (`sam3.pt`) must be manually downloaded from
@@ -364,7 +392,9 @@ All config parameters that affect the detect stage:
 
 | Parameter | Default | Source | Effect |
 |-----------|---------|--------|--------|
-| `segmentation_backend` | `sam_auto` | `base_mapping.yaml` | Detection/segmentation combination (see [Architecture Overview](#1-architecture-overview) for full list) |
+| `segmentation_backend` | `sam_auto` | `base_mapping.yaml` | Segmentation pipeline: `sam_auto`, `sam3_auto`, `detect_sam`, `detect_sam3`, `gt_instances` |
+| `detector_type` | `yoloe` | `base_mapping.yaml` | Detector backend (only used when `segmentation_backend` starts with `detect_`): `yoloe`, `yolo_world`, `florence2`, `gdino` |
+| `detector_name` | `null` | `base_mapping.yaml` | Model ID or weight path; `null` uses the default for `detector_type` |
 | `pipeline_mode` | `trajectory` | `base_mapping.yaml` | Geometry backend for 3D lifting |
 | `device` | `cuda` | config | Target device for model loading |
 | `skip_existing_detections` | `False` | config | Skip frames with existing `.npz` |
@@ -388,45 +418,55 @@ All config parameters that affect the detect stage:
 
 ## 11. Adding a New Detector
 
-To add a new detection model (e.g., Florence2):
+The detector registry mirrors the encoder registry in `semgraph/encoding/`.
+Adding a new detector requires three touches:
 
-1. **Create** `semgraph/detection/florence2.py`:
+1. **Create the module** — e.g. `semgraph/detection/my_detector.py`:
 
 ```python
 from semgraph.detection.base import Detector, DetectionResult
 
-class Florence2Detector(Detector):
+class MyDetector(Detector):
     def load(self, weights, device="cuda", **kwargs):
-        # lazy-import the model library
-        from transformers import AutoModelForCausalLM, AutoProcessor
-        self._model = AutoModelForCausalLM.from_pretrained(weights, ...)
-        self._processor = AutoProcessor.from_pretrained(weights, ...)
+        # lazy-import the model library (never at module level)
+        from some_library import SomeModel
+        self._model = SomeModel.from_pretrained(weights).to(device)
+        self._classes = list(kwargs.get("classes", []))
 
     def detect(self, image_rgb, *, color_path=None):
-        # convert image_rgb to PIL, run model, extract boxes
         ...
         return DetectionResult(xyxy=..., confidence=..., class_ids=...,
-                               class_labels=..., classes=...)
+                               class_labels=..., classes=self._classes)
+
+    @property
+    def vocab_driven(self) -> bool:
+        return True  # if this detector uses a fixed class vocabulary
+
+    @property
+    def classes(self) -> list[str] | None:
+        return list(self._classes) if self._classes else None
 ```
 
-2. **Add to factory** in `semgraph/detection/__init__.py`:
+2. **Register in the factory** — `semgraph/detection/__init__.py`, add an
+   `elif` branch inside `get_detector()`:
 
 ```python
-def get_detector(name):
-    ...
-    if name == "florence2":
-        from semgraph.detection.florence2 import Florence2Detector
-        return Florence2Detector()
-    ...
+elif detector_type == "my_detector":
+    from semgraph.detection.my_detector import MyDetector
+    det = MyDetector()
 ```
 
-3. **Use it** via config: `segmentation_backend=florence2_sam`
+3. **Add default weights** — in `semgraph/detection/base.py`, add an entry
+   to `_DETECTOR_DEFAULTS`:
 
-   In `detect.py`'s `load_models()`, add the mapping from `"florence2_sam"`
-   to `get_detector("florence2")` + `get_segmenter("sam")`.
+```python
+_DETECTOR_DEFAULTS["my_detector"] = "my-org/my-model-base"
+```
 
-No changes needed to `_run_detection()`, `process_frame()`, or any
-downstream stage.
+**Usage:** `segmentation_backend=detect_sam detector_type=my_detector`
+
+No changes needed to `load_models()`, `_run_detection()`,
+`process_frame()`, or any downstream stage.
 
 ### Adding a New Segmenter
 

@@ -1,7 +1,7 @@
 defaults:
   - base_paths
 
-# Class vocabulary for yolo_sam backend. Ignored when segmentation_backend=sam_auto.
+# Class vocabulary for detect_sam/detect_sam3 backends. Ignored when segmentation_backend=sam_auto.
 classes_file: ${repo_root}/semgraph/scannet200_classes.txt
 bg_classes : ["wall", "floor", "ceiling"]
 skip_bg: !!bool False

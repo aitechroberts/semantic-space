@@ -58,7 +58,7 @@ Phase A runs once per scene. It uses the highest-quality models available. No la
 **Code:** `semgraph/stages/detect.py`
 
 **What it does:**
-1. Loads detection and segmentation models via the `Detector`/`Segmenter` ABC factories in `semgraph/detection/`. The combination is configured by `segmentation_backend` (e.g., `sam_auto` = SAMSegmenter in auto mode, `yolo_sam` = YOLOWorldDetector + SAMSegmenter box-prompted).
+1. Loads detection and segmentation models via the `Detector`/`Segmenter` ABC factories in `semgraph/detection/`. The segmenter is configured by `segmentation_backend` (e.g., `sam_auto` = SAMSegmenter in auto mode, `detect_sam` = detector + SAMSegmenter box-prompted). When using `detect_*` backends, the detector is selected independently via `detector_type` + `detector_name`.
 2. For each frame: runs detection + segmentation, filters masks, lifts 2D masks to 3D via the geometry backend.
 3. For each detection: projects the 3D point cloud back to 2D, computes a 1.5x scaled bounding box around the projection, saves the crop as a JPEG.
 4. Saves camera metadata (pose, intrinsics, H, W) so downstream stages never need the geometry backend.
@@ -70,7 +70,7 @@ See [STAGE_DETECTION.md](STAGE_DETECTION.md) for the full detection architecture
 | Model | Weights | VRAM | Purpose |
 |-------|---------|------|---------|
 | SAM 2.1 Base | `sam2.1_b.pt` | ~400 MB | Automatic mask generation or box-prompted |
-| YOLO-World v2 Large | `yolov8l-worldv2.pt` | ~800 MB | Object detection (`yolo_sam` mode only) |
+| YOLO-World v2 Large | `yolov8l-worldv2.pt` | ~800 MB | Object detection (`detect_*` + `detector_type=yolo_world`) |
 
 No CLIP encoder, no VLM — geometry only.
 
@@ -88,7 +88,7 @@ No CLIP encoder, no VLM — geometry only.
 
 | Parameter | Default | Effect |
 |-----------|---------|--------|
-| `segmentation_backend` | `sam_auto` | `sam_auto` (class-agnostic) or `yolo_sam` (closed vocabulary) |
+| `segmentation_backend` | `sam_auto` | `sam_auto` (class-agnostic), `detect_sam` / `detect_sam3` (detector-first) |
 | `skip_existing_detections` | `False` | Skip frames that already have `.npz` output |
 | `mask_area_threshold` | `25` | Min mask pixels to survive filtering |
 | `max_bbox_area_ratio` | `0.9` | Max box area as fraction of frame |

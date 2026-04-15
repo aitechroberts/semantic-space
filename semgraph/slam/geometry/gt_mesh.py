@@ -7,7 +7,7 @@ Two sub-modes controlled by ``segmentation_backend``:
   best views, sets ``skip_segmentation=True`` and ``skip_matching=True``.
   The 3D point cloud comes directly from the mesh vertices.
 
-* **sam_auto / yolo_sam** (frame-first): iterates over camera frames like
+* **sam_auto / detect_sam** (frame-first): iterates over camera frames like
   the trajectory backend.  2D masks are lifted to 3D by projecting mesh
   vertices onto the frame and keeping those that fall inside each mask.
 """

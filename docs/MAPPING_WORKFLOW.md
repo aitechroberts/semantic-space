@@ -36,8 +36,8 @@ For each sampled frame:
 
 1. **Detection + Segmentation:** The configured detector/segmenter pair runs
    on the frame. Default (`sam_auto`): SAMSegmenter in auto mode finds all
-   maskable regions. Alternative (`yolo_sam`): YOLOWorldDetector produces
-   boxes, SAMSegmenter generates one mask per box.
+   maskable regions. Alternative (`detect_sam`): detector (via `detector_type`)
+   produces boxes, SAMSegmenter generates one mask per box.
 
 2. **Filtering:** Removes masks below `mask_area_threshold` (25px), above
    `max_bbox_area_ratio` (90% of frame), and below `mask_conf_threshold` (0.25).
@@ -249,7 +249,7 @@ for backward compatibility.
 | Parameter | Default | Effect |
 |-----------|---------|--------|
 | `stride` | `10` | Frames sampled (10 → ~90 frames on 900-frame Replica) |
-| `segmentation_backend` | `sam_auto` | `sam_auto` (class-agnostic) or `yolo_sam` (closed vocab) |
+| `segmentation_backend` | `sam_auto` | `sam_auto` (class-agnostic), `detect_sam` / `detect_sam3` (detector-first) |
 | `spatial_sim_type` | `iou` | AABB IoU (fast, pure PyTorch) |
 | `sim_threshold` | `1.2` | Aggregated score to match a detection to an object |
 | `mask_area_threshold` | `25` | Min mask pixels |

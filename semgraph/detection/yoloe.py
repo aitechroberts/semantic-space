@@ -69,3 +69,11 @@ class YOLOEDetector(Detector):
             class_labels=class_labels,
             classes=classes,
         )
+
+    @property
+    def vocab_driven(self) -> bool:
+        return True
+
+    @property
+    def classes(self) -> list[str] | None:
+        return list(self._classes) if self._classes else None

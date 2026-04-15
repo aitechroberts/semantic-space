@@ -9,8 +9,10 @@ defaults:
   - _self_
 
 # Segmentation backend override (set via env or leave to base_mapping default)
-# "sam_auto" = class-agnostic SAM automatic masks (open-vocabulary, recommended)
-# "yolo_sam" = YOLO-World closed-vocab detection + SAM box-prompted masks (legacy)
+# "sam_auto"     = class-agnostic SAM automatic masks (open-vocabulary, recommended)
+# "detect_sam"   = detector (via detector_type) + SAM box-prompted masks
+# "detect_sam3"  = detector (via detector_type) + SAM 3 box-prompted masks
+# Legacy strings (yolo_sam, yoloe_sam, etc.) are auto-shimmed with a deprecation warning.
 segmentation_backend: ${oc.env:SEG_BACKEND,sam_auto}
 
 # Detection experiment and mapping experiment labels
@@ -108,3 +110,12 @@ eval:
 # build_map.py config
 build_map:
   matching_mode: incremental       # "incremental" (frame-by-frame) or "batch" (all-pairs clustering)
+
+# geo_eval.py config (geometry fidelity evaluation)
+geo_eval:
+  voxel_size: 0.005              # 5mm for Replica-scale indoor scenes
+  match_iou_threshold: 0.2       # minimum bbox IoU to accept a GT-oracle match
+  centroid_max_dist: 0.15        # reject borderline matches with centroids > 0.15m apart
+  compute_chamfer: !!bool true   # directional Chamfer distance (slightly slower)
+  align_icp: !!bool false        # set true for sparse (DUSt3R) backend
+  validate_gt_instances: !!bool true  # cross-check direct mapping vs Hungarian for gt_instances
