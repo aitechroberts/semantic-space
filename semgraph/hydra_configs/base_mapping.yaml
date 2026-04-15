@@ -68,6 +68,16 @@ sam_auto_min_mask_area_pixels: 100      # drop tiny fragment masks
 sam_auto_max_mask_area_fraction: 0.95   # drop masks covering nearly the entire frame
 sam_auto_nms_iou_threshold: 0.7         # NMS IoU threshold for heavily overlapping masks
 
+save_raw_detections: !!bool False       # write raw_detections/ npz+json per frame (large; disable to save disk)
+
+# Frame selection — controls which frames detect.py processes.
+# For oracle runs, set method=stride stride=1 to process every frame.
+# For ablations, use fps_pose with n_frames=K.
+#   Hydra override example: frame_selection.method=fps_pose frame_selection.n_frames=30
+frame_selection:
+  method: stride
+  stride: ${stride}   # backward-compatible: defaults to the top-level stride
+
 min_points_threshold: 16 # projected and sampled pcd with less points will be skipped
 
 # point cloud processing
@@ -80,6 +90,20 @@ dbscan_min_points: 10
 # Selection criteria of the fused object point cloud
 obj_min_points: 0
 obj_min_detections: 3
+
+# Auto-filter presets for sam_auto / sam3_auto backends.
+# Selected automatically based on frame count, or forced via auto_filter_preset.
+auto_filter_preset: null   # null = auto-select; or "sparse", "moderate", "dense"
+auto_filter_presets:
+  sparse:
+    obj_min_detections: 1
+    obj_min_points: 16
+  moderate:
+    obj_min_detections: 2
+    obj_min_points: 100
+  dense:
+    obj_min_detections: 3
+    obj_min_points: 250
 
 # For merge_overlap_objects() function
 merge_overlap_thresh: 0.7      # -1 means do not perform the merge_overlap_objects()

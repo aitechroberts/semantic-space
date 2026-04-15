@@ -75,9 +75,12 @@ def _load_qwen3vl(model_name, device, dtype):
     )
     encoder = model.visual
     processor = AutoProcessor.from_pretrained(base_name)
-    del model.model  # drop the LLM decoder
+    embed_table = model.get_input_embeddings()
+    if embed_table is not None:
+        embed_table = embed_table.to(device)
+    del model.model
     torch.cuda.empty_cache()
-    return encoder, processor, "qwen3vl"
+    return encoder, processor, "qwen3vl", embed_table
 
 
 def _load_qwen25vl(model_name, device, dtype):
@@ -89,10 +92,13 @@ def _load_qwen25vl(model_name, device, dtype):
         base_name, torch_dtype=dtype, device_map="cpu",
     )
     encoder = model.visual.to(device)
-    processor = AutoProcessor.from_pretrained(base_name).image_processor
+    embed_table = model.get_input_embeddings()
+    if embed_table is not None:
+        embed_table = embed_table.to(device)
+    processor = AutoProcessor.from_pretrained(base_name)
     del model
     torch.cuda.empty_cache()
-    return encoder, processor, "qwen25vl"
+    return encoder, processor, "qwen25vl", embed_table
 
 
 def _load_qwen2vl(model_name, device, dtype):
@@ -102,9 +108,12 @@ def _load_qwen2vl(model_name, device, dtype):
     )
     encoder = model.visual
     processor = AutoProcessor.from_pretrained(model_name)
+    embed_table = model.get_input_embeddings()
+    if embed_table is not None:
+        embed_table = embed_table.to(device)
     del model.model
     torch.cuda.empty_cache()
-    return encoder, processor, "qwen2vl"
+    return encoder, processor, "qwen2vl", embed_table
 
 
 def _load_internvl(model_name, device, dtype):
@@ -114,10 +123,13 @@ def _load_internvl(model_name, device, dtype):
     )
     encoder = model.vision_model
     processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+    embed_table = model.get_input_embeddings()
+    if embed_table is not None:
+        embed_table = embed_table.to(device)
     if hasattr(model, "language_model"):
         del model.language_model
     torch.cuda.empty_cache()
-    return encoder, processor, "internvl"
+    return encoder, processor, "internvl", embed_table
 
 
 def _load_generic_vision_tower(model_name, device, dtype, attr="vision_tower"):
@@ -133,10 +145,13 @@ def _load_generic_vision_tower(model_name, device, dtype, attr="vision_tower"):
             if encoder is not None:
                 break
     processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+    embed_table = model.get_input_embeddings()
+    if embed_table is not None:
+        embed_table = embed_table.to(device)
     if hasattr(model, "language_model"):
         del model.language_model
     torch.cuda.empty_cache()
-    return encoder, processor, "generic"
+    return encoder, processor, "generic", embed_table
 
 
 _LOADERS = {
@@ -194,9 +209,20 @@ class VLMEncoderExtractor:
             )
             loader = lambda n, d, dt: _load_generic_vision_tower(n, d, dt)
 
-        self.encoder, self.processor, self._loader_tag = loader(
+        self.encoder, self.processor, self._loader_tag, self._embed_table = loader(
             model_name, device, dtype
         )
+
+        # Extract tokenizer from the processor for text encoding.
+        self._tokenizer = getattr(self.processor, "tokenizer", None)
+        if self._tokenizer is None:
+            self._tokenizer = getattr(self.processor, "text_tokenizer", None)
+        if self._tokenizer is None:
+            logger.warning(
+                "[VLM-Encoder] No tokenizer found on processor for %s. "
+                "Text encoding will be unavailable (Path B = N/A).",
+                model_name,
+            )
 
         if self.encoder is None:
             raise RuntimeError(
@@ -367,12 +393,46 @@ class VLMEncoderExtractor:
                 results.append(vit_feat)
             return np.stack(results, axis=0), None
 
+    # -----------------------------------------------------------------
+    # Text encoding via embedding table lookup (shallow — no transformer)
+    # -----------------------------------------------------------------
+
+    @torch.no_grad()
+    def encode_text(self, texts: List[str]) -> Optional[np.ndarray]:
+        """Encode text via the LLM embedding table (mean-pooled, L2-normalized).
+
+        Uses raw token embeddings with no transformer layers — a shallow
+        representation sufficient for same-space cosine retrieval against
+        ``proj_feats`` but without contextual processing.  Returns ``None``
+        if the tokenizer or embedding table is unavailable.
+        """
+        if self._tokenizer is None or self._embed_table is None:
+            return None
+        if not texts:
+            return np.zeros((0, self._embed_table.embedding_dim), dtype=np.float32)
+
+        tokens = self._tokenizer(
+            texts, return_tensors="pt", padding=True, truncation=True,
+        )
+        token_ids = tokens["input_ids"].to(self.device)
+        attention_mask = tokens["attention_mask"].to(self.device)
+
+        embeddings = self._embed_table(token_ids)
+        mask = attention_mask.unsqueeze(-1).float()
+        pooled = (embeddings * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-9)
+        pooled = F.normalize(pooled.float(), dim=-1)
+        return pooled.cpu().numpy().astype(np.float32)
+
     def cleanup(self):
-        """Free GPU memory held by the vision encoder."""
+        """Free GPU memory held by the vision encoder and embedding table."""
         if hasattr(self, "encoder"):
             del self.encoder
         if hasattr(self, "processor"):
             del self.processor
+        if hasattr(self, "_embed_table"):
+            del self._embed_table
+        if hasattr(self, "_tokenizer"):
+            del self._tokenizer
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         logger.info("[VLM-Encoder] Cleanup complete.")

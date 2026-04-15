@@ -138,7 +138,7 @@ if __name__ == "__main__":
     import hydra
     from omegaconf import DictConfig
 
-    @hydra.main(version_base=None, config_path="../../hydra_configs", config_name="batch_vlm_mapping_api")
+    @hydra.main(version_base=None, config_path="../hydra_configs", config_name="batch_vlm_mapping_api")
     def main(cfg: DictConfig):
         main_standalone(cfg)
 

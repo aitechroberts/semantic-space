@@ -181,3 +181,11 @@ class SparseBackend(GeometryBackend):
 
     def num_iterations(self, ctx: SparseContext) -> int:
         return len(ctx.image_paths)
+
+    def get_poses(self, ctx: SparseContext) -> dict[int, np.ndarray]:
+        import torch
+
+        poses: dict[int, np.ndarray] = {}
+        for i, p in enumerate(ctx.poses):
+            poses[i] = p.detach().cpu().numpy() if torch.is_tensor(p) else np.asarray(p)
+        return poses

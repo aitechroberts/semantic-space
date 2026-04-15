@@ -125,6 +125,7 @@ class TestSaveLoadFrameData:
             frame_idx=10,
             color_path="/some/path.png",
             skip_matching=False,
+            n_raw_detections=42,
             surviving_indices=np.array([0, 2, 5], dtype=np.int32),
             pcd_points_list=[np.random.randn(20, 3)],
             pcd_colors_list=[np.random.rand(20, 3)],
@@ -151,6 +152,7 @@ class TestSaveLoadFrameData:
             assert loaded.frame_idx == 10
             assert loaded.color_path == "/some/path.png"
             assert loaded.n_detections == 1
+            assert loaded.n_raw_detections == 42
             np.testing.assert_array_equal(loaded.surviving_indices, np.array([0, 2, 5]))
 
 
@@ -164,7 +166,7 @@ class TestListFrameIndices:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir)
             for idx in [5, 1, 10]:
-                save_raw_det(path, idx, make_empty_gobs(1))
+                save_raw_det(path, idx, make_empty_gobs(1, feat_dim=128))
 
             indices = list_frame_indices(path)
             assert indices == [1, 5, 10]

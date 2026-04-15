@@ -94,7 +94,7 @@ class RawGobs(TypedDict, total=False):
 
 def make_empty_gobs(
     n_detections: int,
-    feat_dim: int = 512,
+    feat_dim: int,
     *,
     xyxy: np.ndarray | None = None,
     mask: np.ndarray | None = None,

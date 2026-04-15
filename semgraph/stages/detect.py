@@ -183,7 +183,8 @@ def load_models(cfg: Any, obj_classes: Any = None) -> DetectionModels:
     device = cfg.get("device", "cuda")
 
     segmenter = get_segmenter(spec["segmenter"])
-    segmenter.load(weights=_resolve_weights(spec["seg_weights"]), device=device)
+    seg_weights = cfg.get("seg_weights_override", spec["seg_weights"])
+    segmenter.load(weights=_resolve_weights(seg_weights), device=device)
 
     det_name = spec["detector"]
     detector = get_detector(det_name)
@@ -396,11 +397,35 @@ def main_standalone(cfg):
 
     cfg = process_cfg(cfg)
     paths = stage_paths(cfg)
-    for d in paths.values():
+    save_raw = cfg.get("save_raw_detections", False)
+    for key, d in paths.items():
+        if key == "raw_det" and not save_raw:
+            continue
         d.mkdir(parents=True, exist_ok=True)
 
     backend = get_geometry_backend(cfg.get("pipeline_mode", "trajectory"))
     geo_ctx = backend.load(cfg)
+
+    # --- frame selection ---
+    from semgraph.sampling import get_frame_selector
+
+    fs_cfg = cfg.get("frame_selection", {"method": "stride", "stride": cfg.get("stride", 10)})
+    selector = get_frame_selector(fs_cfg["method"])
+    all_poses = backend.get_poses(geo_ctx)
+    selection = selector.select(
+        all_poses, **{k: v for k, v in fs_cfg.items() if k != "method"}
+    )
+    selected_set = set(selection.frame_indices.tolist())
+
+    import json as _json
+
+    meta_path = paths["frame_data"] / "_selection_metadata.json"
+    with open(meta_path, "w") as _f:
+        _json.dump(
+            {"method": selection.method, **selection.metadata,
+             "n_selected": len(selection.frame_indices)},
+            _f, indent=2,
+        )
 
     det_cfg = cfg_to_dict(cfg)
     obj_classes = ObjectClasses(
@@ -417,15 +442,18 @@ def main_standalone(cfg):
         total=backend.num_iterations(geo_ctx),
         desc="detect",
     ):
+        if frame_ctx.frame_idx not in selected_set:
+            continue
+
         if skip_existing:
-            existing = paths["raw_det"] / f"{frame_ctx.frame_idx:06d}.npz"
+            existing = paths["frame_data"] / f"{frame_ctx.frame_idx:06d}.npz"
             if existing.is_file():
                 continue
 
         raw_gobs, det_list, surviving = process_frame(
             frame_ctx, models, cfg, backend, obj_classes
         )
-        if raw_gobs is not None:
+        if raw_gobs is not None and save_raw:
             save_raw_det(paths["raw_det"], frame_ctx.frame_idx, raw_gobs)
         if det_list is not None and len(det_list) > 0 and surviving is not None:
             pose = frame_ctx.pose if frame_ctx.pose is not None else np.eye(4)
@@ -470,6 +498,7 @@ def main_standalone(cfg):
                 skip_matching=frame_ctx.skip_matching,
                 H=H,
                 W=W,
+                n_raw_detections=len(raw_gobs["mask"]),
                 pose=pose,
                 intrinsics=intrinsics,
                 surviving_indices=surviving,

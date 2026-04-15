@@ -72,6 +72,17 @@ class GeometryBackend(ABC):
         """Total iteration count for progress bars, or None if unknown."""
         ...
 
+    @abstractmethod
+    def get_poses(self, ctx: Any) -> dict[int, np.ndarray]:
+        """Return all available camera poses without loading images or depth.
+
+        Returns
+        -------
+        poses : dict mapping frame_idx -> (4, 4) camera-to-world matrix.
+            The indices match those yielded by ``get_iterator()``.
+        """
+        ...
+
     @staticmethod
     def load_camera_frames(cfg: Any) -> tuple[list[dict], Any]:
         """Load camera trajectory via GradSLAMDataset.

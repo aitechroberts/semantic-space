@@ -291,6 +291,9 @@ class GTMeshBackend(GeometryBackend):
             count += 1
         return count
 
+    def get_poses(self, ctx: GTMeshContext) -> dict[int, np.ndarray]:
+        return {i: fr["pose"] for i, fr in enumerate(ctx.frames)}
+
     @staticmethod
     def _load_camera_trajectory(cfg: Any) -> list[dict]:
         """Load camera frames, discarding the dataset object."""

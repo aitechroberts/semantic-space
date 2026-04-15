@@ -129,22 +129,88 @@ def load_captions(directory: Path) -> CaptionsRecord | None:
 # map (build_map.py output — intermediate before oracle_finalize)
 # =====================================================================
 
+def _serialize_obj(obj: dict) -> dict:
+    """Convert a live detection/object dict to a pickle-safe form.
+
+    Open3D CUDA geometry objects cannot be pickled, so we convert
+    ``pcd`` and ``bbox`` to numpy arrays and reconstruct on load.
+    """
+    import open3d as o3d
+
+    out = {}
+    for k, v in obj.items():
+        if isinstance(v, (o3d.geometry.PointCloud,)):
+            pts = np.asarray(v.points)
+            cols = np.asarray(v.colors) if v.has_colors() else np.zeros_like(pts)
+            out[k] = {"__o3d_pcd__": True, "points": pts, "colors": cols}
+        elif isinstance(v, (o3d.geometry.AxisAlignedBoundingBox,)):
+            out[k] = {
+                "__o3d_bbox__": "axis_aligned",
+                "min_bound": np.asarray(v.min_bound),
+                "max_bound": np.asarray(v.max_bound),
+            }
+        elif isinstance(v, (o3d.geometry.OrientedBoundingBox,)):
+            out[k] = {
+                "__o3d_bbox__": "oriented",
+                "corners": np.asarray(v.get_box_points()),
+            }
+        else:
+            out[k] = v
+    return out
+
+
+def _deserialize_obj(obj: dict) -> dict:
+    """Reconstruct Open3D objects from the numpy-serialized form."""
+    import open3d as o3d
+
+    out = {}
+    for k, v in obj.items():
+        if isinstance(v, dict) and v.get("__o3d_pcd__"):
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(v["points"])
+            if v["colors"] is not None and len(v["colors"]) > 0:
+                pcd.colors = o3d.utility.Vector3dVector(v["colors"])
+            out[k] = pcd
+        elif isinstance(v, dict) and v.get("__o3d_bbox__") == "axis_aligned":
+            out[k] = o3d.geometry.AxisAlignedBoundingBox(
+                min_bound=v["min_bound"], max_bound=v["max_bound"],
+            )
+        elif isinstance(v, dict) and v.get("__o3d_bbox__") == "oriented":
+            out[k] = o3d.geometry.OrientedBoundingBox.create_from_points(
+                o3d.utility.Vector3dVector(v["corners"])
+            )
+        else:
+            out[k] = v
+    return out
+
+
 def save_map(directory: Path, objects: Any, edges: Any, cfg: Any) -> None:
     """Save the accumulated map (MapObjectList + MapEdgeMapping).
 
-    The map is a complex live-object structure; we save the serializable
-    form via the MapObjectList's own ``to_serializable`` method, falling
-    back to the full object if that's unavailable.
+    Open3D geometry objects are converted to numpy arrays before pickling
+    to avoid issues with unpicklable CUDA-backed Open3D types.
     """
-    import pickle, gzip, tempfile, os  # noqa: E401 — kept intentionally for map only
+    import pickle, gzip, tempfile, os  # noqa: E401
     path = Path(directory) / "oracle_map"
     path.parent.mkdir(parents=True, exist_ok=True)
-    # Map contains live o3d objects that can't be npz-serialized atomically.
-    # Use a temporary pickle until oracle_finalize converts to OracleSceneRecord.
+
+    serialized_objects = [_serialize_obj(obj) for obj in objects]
+
+    # MapEdgeMapping.objects holds a ref to the live MapObjectList which
+    # contains unpicklable CUDA Open3D objects.  Temporarily detach it.
+    saved_ref = getattr(edges, "objects", None)
+    if hasattr(edges, "objects"):
+        edges.objects = None
+
     fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    os.close(fd)
     try:
-        with gzip.open(fd, "wb") as f:
-            pickle.dump({"objects": objects, "edges": edges, "cfg": cfg}, f)
+        with gzip.open(tmp, "wb") as f:
+            pickle.dump({
+                "objects": serialized_objects,
+                "edges": edges,
+                "cfg": cfg,
+            }, f)
         target = path.with_suffix(".pkl.gz")
         os.rename(tmp, target)
     except BaseException:
@@ -153,6 +219,9 @@ def save_map(directory: Path, objects: Any, edges: Any, cfg: Any) -> None:
         except OSError:
             pass
         raise
+    finally:
+        if saved_ref is not None and hasattr(edges, "objects"):
+            edges.objects = saved_ref
 
 
 def load_map(directory: Path) -> tuple[Any, Any, Any] | None:
@@ -163,7 +232,12 @@ def load_map(directory: Path) -> tuple[Any, Any, Any] | None:
         return None
     with gzip.open(path, "rb") as f:
         result = pickle.load(f)  # noqa: S301
-    return result["objects"], result["edges"], result["cfg"]
+
+    objects = [_deserialize_obj(obj) for obj in result["objects"]]
+    edges = result["edges"]
+    if hasattr(edges, "objects"):
+        edges.objects = objects
+    return objects, edges, result["cfg"]
 
 
 # =====================================================================
@@ -304,7 +378,7 @@ def deserialize_detection(data: SerializedDetection, device: str = "cpu") -> dic
     def _to_tensor(arr: np.ndarray | None) -> Any:
         if arr is None:
             return None
-        return torch.from_numpy(arr).to(device)
+        return torch.from_numpy(arr)
 
     return {
         "pcd": pcd,

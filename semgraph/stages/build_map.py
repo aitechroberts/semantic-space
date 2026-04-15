@@ -1,11 +1,18 @@
 """
-Stage A3 — Incremental map construction.
+Stage A3 — Map construction (incremental or batch).
 
-Reads ``frame_data/*.npz`` (+ ``.json``), runs the matching/merging loop
-to build a MapObjectList, writes ``map/oracle_map``.
+Reads ``frame_data/*.npz`` (+ ``.json``), runs matching/merging to build a
+MapObjectList, writes ``map/oracle_map``.
 
-**Must always run from frame 0** — the matching/merging loop is incremental
-and frame N depends on accumulated state from frames 0 through N-1.
+Two matching modes (``build_map.matching_mode``):
+
+* **incremental** (default) — frame-by-frame matching against accumulated
+  objects.  Order-dependent; designed for sequential trajectory data with
+  high temporal adjacency.
+* **batch** — loads all detections, computes a full D x D pairwise
+  similarity matrix, clusters via connected components, then merges each
+  cluster.  Order-invariant; designed for sparse/DUSt3R mode or
+  FPS-selected diverse viewpoints.
 
 Standalone usage::
 
@@ -20,7 +27,7 @@ from typing import Any
 
 import numpy as np
 
-from semgraph.slam.slam_classes import MapEdgeMapping, MapObjectList
+from semgraph.slam.slam_classes import DetectionList, MapEdgeMapping, MapObjectList
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +216,17 @@ def run_maintenance(
         )
 
     if processing_needed(cfg["merge_interval"], cfg["run_merge_final_frame"], frame_idx, is_final_frame):
+        if cfg["obj_min_points"] > 0 or cfg["obj_min_detections"] > 1:
+            pre_count = len(objects)
+            objects = filter_objects(
+                obj_min_points=cfg["obj_min_points"],
+                obj_min_detections=cfg["obj_min_detections"],
+                objects=objects,
+                map_edges=map_edges,
+            )
+            if len(objects) < pre_count:
+                print(f"[build_map] Pre-merge filter: {pre_count} -> {len(objects)} objects")
+
         if cfg["make_edges"]:
             objects, map_edges = measure_time(merge_objects)(
                 merge_overlap_thresh=cfg["merge_overlap_thresh"],
@@ -244,57 +262,89 @@ def run_maintenance(
 
 
 # ---------------------------------------------------------------------------
-# Standalone entry point
+# Detection augmentation for merge compatibility
 # ---------------------------------------------------------------------------
 
-def main_standalone(cfg):
-    """Standalone build_map stage — reads frame_data + captions, writes map."""
+def _prepare_detection_for_merge(det: dict, frame_idx: int, det_idx: int) -> dict:
+    """Add keys that ``merge_obj2_into_obj1`` expects but ``deserialize_detection`` omits."""
+    import uuid
+
+    det.setdefault("id", str(uuid.uuid4()))
+    det.setdefault("image_idx", [frame_idx])
+    det.setdefault("mask_idx", [det_idx])
+    det.setdefault("color_path", [""])
+    det.setdefault("mask", [])
+    det.setdefault("xyxy", [])
+    det.setdefault("conf", [])
+    det.setdefault("contain_number", [0])
+    det.setdefault("captions", [""])
+    det.setdefault("num_detections", 1)
+    det.setdefault("num_obj_in_class", 1)
+    det.setdefault("is_background", False)
+    det.setdefault("new_counter", 0)
+    det.setdefault("curr_obj_num", det_idx)
+    det.setdefault("inst_color", None)
+    det.pop("inst_id", None)
+    return det
+
+
+# ---------------------------------------------------------------------------
+# Shared deserialization helper
+# ---------------------------------------------------------------------------
+
+def _load_detections_from_record(frame_record, cfg, SerializedDetection, deserialize_detection):
+    """Deserialize all detections from a single FrameDataRecord."""
+    det_list = DetectionList()
+    for i in range(frame_record.n_detections):
+        dm = frame_record.det_meta[i]
+        sd = SerializedDetection(
+            pcd_points=frame_record.pcd_points_list[i],
+            pcd_colors=frame_record.pcd_colors_list[i],
+            bbox_corners=frame_record.bbox_corners[i] if i < len(frame_record.bbox_corners) else np.zeros((8, 3)),
+            bbox_type=dm.bbox_type,
+            class_name=dm.class_name,
+            class_id=dm.class_id,
+            inst_id=dm.inst_id,
+            n_points=dm.n_points,
+            crop_path=dm.crop_path,
+            clip_ft=frame_record.clip_ft[i] if frame_record.clip_ft is not None and i < len(frame_record.clip_ft) else None,
+            text_ft=frame_record.text_ft[i] if frame_record.text_ft is not None and i < len(frame_record.text_ft) else None,
+            vlm_vit_ft=None,
+            vlm_proj_ft=None,
+        )
+        det_list.append(deserialize_detection(sd, cfg.device))
+    return det_list
+
+
+# ---------------------------------------------------------------------------
+# Incremental matching (original algorithm, extracted from main_standalone)
+# ---------------------------------------------------------------------------
+
+def build_map_incremental(frame_indices, paths, cfg):
+    """Frame-by-frame incremental matching loop.
+
+    This is the original build_map algorithm: each frame's detections are
+    matched against accumulated objects, then maintenance is run
+    periodically.  Order-dependent.
+    """
     from tqdm import tqdm
-    from semgraph.stages.paths import stage_paths, SerializedDetection
-    from semgraph.io import (
-        list_frame_indices,
-        load_frame_data,
-        deserialize_detection,
-        save_map,
-    )
-    from semgraph.slam.utils import process_cfg
+    from semgraph.stages.paths import SerializedDetection
+    from semgraph.io import load_frame_data, deserialize_detection
 
-    cfg = process_cfg(cfg)
-    paths = stage_paths(cfg)
-    paths["map"].mkdir(parents=True, exist_ok=True)
-
-    objects = MapObjectList(device=cfg.device)
+    objects = MapObjectList()
     map_edges = MapEdgeMapping(objects)
-
-    frame_indices = list_frame_indices(paths["frame_data"])
     n_frames = len(frame_indices)
-    print(f"[build_map] Processing {n_frames} frames (always from frame 0)")
 
     for loop_idx, frame_idx in enumerate(tqdm(frame_indices, desc="build_map")):
         frame_record = load_frame_data(paths["frame_data"], frame_idx)
         if frame_record is None:
             continue
 
-        # Reconstruct SerializedDetection dicts from the FrameDataRecord
-        det_list = []
-        for i in range(frame_record.n_detections):
-            dm = frame_record.det_meta[i]
-            sd = SerializedDetection(
-                pcd_points=frame_record.pcd_points_list[i],
-                pcd_colors=frame_record.pcd_colors_list[i],
-                bbox_corners=frame_record.bbox_corners[i] if i < len(frame_record.bbox_corners) else np.zeros((8, 3)),
-                bbox_type=dm.bbox_type,
-                class_name=dm.class_name,
-                class_id=dm.class_id,
-                inst_id=dm.inst_id,
-                n_points=dm.n_points,
-                crop_path=dm.crop_path,
-                clip_ft=frame_record.clip_ft[i] if frame_record.clip_ft is not None and i < len(frame_record.clip_ft) else None,
-                text_ft=frame_record.text_ft[i] if frame_record.text_ft is not None and i < len(frame_record.text_ft) else None,
-                vlm_vit_ft=None,
-                vlm_proj_ft=None,
-            )
-            det_list.append(deserialize_detection(sd, cfg.device))
+        det_list = _load_detections_from_record(
+            frame_record, cfg, SerializedDetection, deserialize_detection,
+        )
+        for det_idx, det in enumerate(det_list):
+            _prepare_detection_for_merge(det, frame_record.frame_idx, det_idx)
 
         if det_list and len(det_list) > 0:
             metadata = {
@@ -306,6 +356,169 @@ def main_standalone(cfg):
         is_final = loop_idx == n_frames - 1
         objects, map_edges = run_maintenance(objects, map_edges, cfg, frame_idx, is_final)
 
+    return objects, map_edges
+
+
+# ---------------------------------------------------------------------------
+# Batch matching (all-pairs connected-components algorithm)
+# ---------------------------------------------------------------------------
+
+def build_map_batch(frame_indices, paths, cfg):
+    """Order-invariant batch matching via pairwise similarity and clustering.
+
+    All detections are loaded at once, a full D x D similarity matrix is
+    computed, connected components define clusters, and each cluster is
+    merged into a single map object using the same ``merge_obj2_into_obj1``
+    logic as the incremental path.
+    """
+    from tqdm import tqdm
+    import scipy.sparse as sp
+    from scipy.sparse.csgraph import connected_components
+
+    from semgraph.stages.paths import SerializedDetection
+    from semgraph.io import load_frame_data, deserialize_detection
+    from semgraph.slam.mapping import (
+        aggregate_similarities,
+        compute_spatial_similarities,
+        compute_visual_similarities,
+        compute_3d_bbox_iou,
+    )
+    from semgraph.slam.utils import merge_obj2_into_obj1
+
+    # -- Step 1: Load all detections into a flat MapObjectList --------------
+    all_dets = MapObjectList()
+    global_det_idx = 0
+
+    for frame_idx in tqdm(frame_indices, desc="build_map(batch) load"):
+        frame_record = load_frame_data(paths["frame_data"], frame_idx)
+        if frame_record is None:
+            continue
+        det_list = _load_detections_from_record(
+            frame_record, cfg, SerializedDetection, deserialize_detection,
+        )
+        for det in det_list:
+            _prepare_detection_for_merge(det, frame_idx, global_det_idx)
+            all_dets.append(det)
+            global_det_idx += 1
+
+    D = len(all_dets)
+    if D == 0:
+        objects = MapObjectList()
+        map_edges = MapEdgeMapping(objects)
+        return objects, map_edges
+
+    if D > 10_000:
+        logger.warning(
+            "Batch mode with %d detections — expect high memory usage "
+            "and slow similarity computation (D^2 = %s).",
+            D, f"{D * D:,}",
+        )
+
+    print(f"[build_map] Batch mode: {D} total detections from {len(frame_indices)} frames")
+
+    # -- Step 2: Full D x D pairwise similarity -----------------------------
+    spatial_sim = compute_spatial_similarities(
+        spatial_sim_type=cfg["spatial_sim_type"],
+        detection_list=all_dets,
+        objects=all_dets,
+        downsample_voxel_size=cfg["downsample_voxel_size"],
+    )
+    visual_sim = compute_visual_similarities(all_dets, all_dets)
+    agg_sim = aggregate_similarities(
+        match_method=cfg["match_method"],
+        phys_bias=cfg["phys_bias"],
+        spatial_sim=spatial_sim,
+        visual_sim=visual_sim,
+    )
+
+    # -- Step 3: Connected-components clustering ----------------------------
+    sim_threshold = cfg["sim_threshold"]
+    adj = (agg_sim > sim_threshold).cpu().numpy()
+    np.fill_diagonal(adj, False)
+
+    # IoU fallback: only for near-threshold pairs to avoid O(D^2) bbox calls
+    iou_merge_kappa = cfg.get("iou_merge_kappa", 0.0)
+    if iou_merge_kappa > 0:
+        near = (agg_sim.cpu().numpy() > 0.5 * sim_threshold) & ~adj
+        np.fill_diagonal(near, False)
+        rows, cols = np.where(np.triu(near))
+        for i, j in zip(rows, cols):
+            iou = compute_3d_bbox_iou(all_dets[i]["bbox"], all_dets[j]["bbox"])
+            if iou > iou_merge_kappa:
+                adj[i, j] = adj[j, i] = True
+
+    n_components, labels = connected_components(
+        sp.csr_matrix(adj.astype(np.bool_)), directed=False,
+    )
+    print(f"[build_map] {n_components} clusters from {D} detections")
+
+    # -- Step 4: Merge each cluster into a single map object ----------------
+    objects = MapObjectList()
+    map_edges = MapEdgeMapping(objects)
+
+    for cluster_id in range(n_components):
+        members = np.where(labels == cluster_id)[0]
+        seed = all_dets[int(members[0])]
+        for m_idx in members[1:]:
+            seed = merge_obj2_into_obj1(
+                obj1=seed,
+                obj2=all_dets[int(m_idx)],
+                downsample_voxel_size=cfg["downsample_voxel_size"],
+                dbscan_remove_noise=cfg["dbscan_remove_noise"],
+                dbscan_eps=cfg["dbscan_eps"],
+                dbscan_min_points=cfg["dbscan_min_points"],
+                spatial_sim_type=cfg["spatial_sim_type"],
+                device=cfg["device"],
+                run_dbscan=False,
+            )
+        objects.append(seed)
+
+    # -- Step 5: Final post-processing (denoise + filter + merge) -----------
+    if len(frame_indices) > 0:
+        objects, map_edges = run_maintenance(
+            objects, map_edges, cfg, frame_indices[-1], is_final_frame=True,
+        )
+
+    return objects, map_edges
+
+
+# ---------------------------------------------------------------------------
+# Standalone entry point
+# ---------------------------------------------------------------------------
+
+def main_standalone(cfg):
+    """Standalone build_map stage — reads frame_data, writes map."""
+    from semgraph.stages.paths import stage_paths
+    from semgraph.io import list_frame_indices, save_map
+    from semgraph.slam.utils import process_cfg
+
+    cfg = process_cfg(cfg)
+    paths = stage_paths(cfg)
+    paths["map"].mkdir(parents=True, exist_ok=True)
+
+    frame_indices = list_frame_indices(paths["frame_data"])
+    print(f"[build_map] Processing {len(frame_indices)} frames")
+
+    seg_backend = cfg.get("segmentation_backend", "")
+    if seg_backend in ("sam_auto", "sam3_auto"):
+        n_frames = len(frame_indices)
+        preset_name = cfg.get("auto_filter_preset", None)
+        if not preset_name:
+            preset_name = "dense" if n_frames > 100 else "moderate" if n_frames > 30 else "sparse"
+        presets = cfg.get("auto_filter_presets", {})
+        if preset_name in presets:
+            preset = presets[preset_name]
+            cfg["obj_min_points"] = preset["obj_min_points"]
+            cfg["obj_min_detections"] = preset["obj_min_detections"]
+            print(f"[build_map] Auto-filter preset: {preset_name} "
+                  f"(min_det={cfg['obj_min_detections']}, min_pts={cfg['obj_min_points']})")
+
+    matching_mode = cfg.get("build_map", {}).get("matching_mode", "incremental")
+    if matching_mode == "batch":
+        objects, map_edges = build_map_batch(frame_indices, paths, cfg)
+    else:
+        objects, map_edges = build_map_incremental(frame_indices, paths, cfg)
+
     save_map(paths["map"], objects, map_edges, cfg)
     print(f"[build_map] Done. {len(objects)} objects in map.")
 
@@ -314,7 +527,7 @@ if __name__ == "__main__":
     import hydra
     from omegaconf import DictConfig
 
-    @hydra.main(version_base=None, config_path="../../hydra_configs", config_name="batch_vlm_mapping_api")
+    @hydra.main(version_base=None, config_path="../hydra_configs", config_name="batch_vlm_mapping_api")
     def main(cfg: DictConfig):
         main_standalone(cfg)
 

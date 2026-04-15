@@ -250,8 +250,8 @@ Per-frame data written to disk under `{dataset_root}/{scene_id}/stages/`:
 
 | Artifact | Record Type | Key Fields |
 |----------|-------------|------------|
-| `raw_detections/{frame:06d}.npz+.json` | `RawDetRecord` | Pre-filter: masks (flat+offsets+shapes), xyxy, confidence, class_id, labels, classes |
-| `frame_data/{frame:06d}.npz+.json` | `FrameDataRecord` | Post-filter+lift: pcd_points/colors (offsets), bbox_corners, pose (4x4), intrinsics (4x4), H, W, surviving_indices, per-detection `_DetectionMeta` |
+| `raw_detections/{frame:06d}.npz+.json` | `RawDetRecord` | Pre-filter: masks (flat+offsets+shapes), xyxy, confidence, class_id, labels, classes. **Only written when `save_raw_detections` is true.** |
+| `frame_data/{frame:06d}.npz+.json` | `FrameDataRecord` | Post-filter+lift: pcd_points/colors (offsets), bbox_corners, pose (4x4), intrinsics (4x4), H, W, `n_raw_detections`, surviving_indices, per-detection `_DetectionMeta` |
 | `crops/{frame:06d}_{det:03d}.jpg` | JPEG | 1.5x projected crop per surviving detection |
 
 **`_DetectionMeta` fields:** `bbox_type`, `class_name`, `class_id`, `inst_id`,
@@ -299,6 +299,12 @@ After filtering and 3D lifting, `main_standalone()` constructs a
 `FrameDataRecord` from the detection list. This record stores per-detection
 PCD points/colors (offset pattern), bbox corners, camera pose/intrinsics,
 and `_DetectionMeta` for each detection.
+
+The record also includes `n_raw_detections` — the number of masks in
+`raw_gobs` before any filtering. Combined with
+`len(surviving_indices)` (post-filter count), this gives the filtering
+ratio for the frame, even when `save_raw_detections` is false and the
+full raw detection files are not written to disk.
 
 ---
 
@@ -370,6 +376,7 @@ All config parameters that affect the detect stage:
 | `sam_auto_min_mask_area_pixels` | `100` | `base_mapping.yaml` | SAM auto: min area filter |
 | `sam_auto_max_mask_area_fraction` | `0.95` | `base_mapping.yaml` | SAM auto: max area fraction |
 | `sam_auto_nms_iou_threshold` | `0.7` | `base_mapping.yaml` | SAM auto: NMS IoU threshold |
+| `save_raw_detections` | `False` | `base_mapping.yaml` | Write `raw_detections/` npz+json per frame; when false the directory is not created |
 | `downsample_voxel_size` | `0.01` | `batch_vlm_mapping_api.yaml` | Voxel size for PCD downsampling |
 | `dbscan_remove_noise` | `True` | `base_mapping.yaml` | DBSCAN denoising per detection |
 | `dbscan_eps` | `0.1` | `base_mapping.yaml` | DBSCAN neighborhood radius |

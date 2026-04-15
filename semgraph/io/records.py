@@ -32,6 +32,17 @@ def _concat_with_offsets(
         flat = np.empty((0, arrays[0].shape[1] if arrays and arrays[0].ndim > 1 else 0), dtype=np.float64)
         offsets = np.zeros(len(arrays) + 1, dtype=np.int64)
         return flat, offsets
+
+    # Infer width from the first non-empty array so zero-length entries
+    # can be reshaped to (0, D) instead of (0, 0).
+    dim = 0
+    for a in arrays:
+        if a.ndim > 1 and a.shape[1] > 0:
+            dim = a.shape[1]
+            break
+    if dim > 0:
+        arrays = [a if (a.ndim > 1 and a.shape[1] == dim) else np.empty((0, dim), dtype=a.dtype) for a in arrays]
+
     lengths = [len(a) for a in arrays]
     offsets = np.zeros(len(lengths) + 1, dtype=np.int64)
     np.cumsum(lengths, out=offsets[1:])
@@ -144,6 +155,7 @@ class FrameDataRecord:
     skip_matching: bool = False
     H: int = 0
     W: int = 0
+    n_raw_detections: int = 0
 
     # per-frame
     pose: np.ndarray = field(default_factory=lambda: np.eye(4))
@@ -200,6 +212,7 @@ class FrameDataRecord:
             "skip_matching": self.skip_matching,
             "H": self.H,
             "W": self.W,
+            "n_raw_detections": self.n_raw_detections,
             "detections": [
                 {
                     "bbox_type": dm.bbox_type,
@@ -246,6 +259,7 @@ class FrameDataRecord:
             skip_matching=meta.get("skip_matching", False),
             H=meta.get("H", 0),
             W=meta.get("W", 0),
+            n_raw_detections=meta.get("n_raw_detections", 0),
             pose=arrays.get("pose", np.eye(4)),
             intrinsics=arrays.get("intrinsics", np.eye(3)),
             surviving_indices=arrays.get("surviving_indices", np.array([], dtype=np.int32)),

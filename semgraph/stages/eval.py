@@ -196,40 +196,191 @@ def evaluate_qa(
 # Retrieval evaluation
 # ---------------------------------------------------------------------------
 
+def _normalize_answer(answer: str) -> str:
+    """Normalize answer for comparison (lowercase, strip punctuation)."""
+    import re
+    answer = answer.lower()
+    answer = re.sub(r'[^\w\s]', ' ', answer)
+    return ' '.join(answer.split())
+
+
+def _check_retrieval_match(
+    retrieved_tags: list[str],
+    ground_truth: str,
+    k: int,
+) -> tuple[bool, int]:
+    """Check if any of top-k retrieved object tags match ground truth.
+
+    Returns (is_match, rank) where rank is 1-indexed (0 = no match).
+    """
+    gt_norm = _normalize_answer(ground_truth)
+
+    for i, tag in enumerate(retrieved_tags[:k]):
+        tag_norm = _normalize_answer(tag)
+
+        if gt_norm in tag_norm or tag_norm in gt_norm:
+            return True, i + 1
+
+        gt_words = set(gt_norm.split())
+        tag_words = set(tag_norm.split())
+        if gt_words and len(gt_words & tag_words) / len(gt_words) > 0.3:
+            return True, i + 1
+
+    return False, 0
+
+
 def evaluate_retrieval(
     scene_graph: dict,
-    embed_variant: Any = None,
-    queries: list[str] | None = None,
+    variant: Any = None,
+    queries: list[dict] | None = None,
+    text_encoder: Any = None,
     k_values: list[int] | None = None,
 ) -> dict:
-    """Run retrieval evaluation. Returns metrics dict.
+    """Run retrieval evaluation using cosine similarity against variant features.
 
-    Uses max-over-views similarity from the embed variant's per-view features.
+    Parameters
+    ----------
+    scene_graph : dict
+        The assembled scene graph (used for object tags).
+    variant : VariantRecord or None
+        Phase B embed variant with ``clip_ft_weighted_avg`` and ``clip_ft_best``.
+    queries : list[dict] or None
+        Each dict has ``"question"`` (str) and ``"answer"`` (str).
+    text_encoder : EmbeddingEncoder or None
+        Encoder used for query text embedding.  Must have
+        ``has_aligned_text_space == True`` and a working ``encode_texts()``.
+    k_values : list[int] or None
+        Recall cutoffs (default [1, 5, 10]).
     """
     if k_values is None:
-        k_values = [1, 3, 5, 10]
+        k_values = [1, 5, 10]
 
-    if embed_variant is None or queries is None:
+    if variant is None or queries is None or not queries:
         return {
             "status": "framework_ready",
             "k_values": k_values,
-            "note": "Retrieval requires embed_variant and query set.",
+            "note": "Retrieval requires variant features and a query set.",
         }
 
-    return {
-        "status": "framework_ready",
+    if text_encoder is None:
+        return {
+            "status": "skipped",
+            "reason": "No text encoder provided.",
+        }
+
+    if not text_encoder.has_aligned_text_space:
+        return {
+            "status": "skipped",
+            "reason": "Encoder does not have an aligned text space (Path B = N/A).",
+        }
+
+    objects = scene_graph.get("objects", [])
+    obj_tags = [obj.get("object_tag", "unknown") for obj in objects]
+
+    feat_avg = getattr(variant, "clip_ft_weighted_avg", None)
+    feat_best = getattr(variant, "clip_ft_best", None)
+
+    if feat_avg is None or feat_avg.size == 0:
+        return {
+            "status": "skipped",
+            "reason": "Variant has no clip_ft_weighted_avg features.",
+        }
+
+    max_k = max(k_values)
+    results_avg = {f"recall@{k}": 0 for k in k_values}
+    results_best = {f"recall@{k}": 0 for k in k_values} if feat_best is not None and feat_best.size > 0 else None
+
+    n_queries = len(queries)
+    for q in queries:
+        question = q.get("question", "")
+        answer = q.get("answer", "")
+        if not question:
+            continue
+
+        query_emb = text_encoder.encode_texts([question])
+        if query_emb is None or query_emb.size == 0:
+            continue
+
+        sims_avg = (query_emb @ feat_avg.T).squeeze(0)
+        ranked_idx_avg = np.argsort(-sims_avg)[:max_k]
+        ranked_tags_avg = [obj_tags[i] for i in ranked_idx_avg if i < len(obj_tags)]
+
+        for k in k_values:
+            match, _ = _check_retrieval_match(ranked_tags_avg, answer, k)
+            if match:
+                results_avg[f"recall@{k}"] += 1
+
+        if results_best is not None:
+            sims_best = (query_emb @ feat_best.T).squeeze(0)
+            ranked_idx_best = np.argsort(-sims_best)[:max_k]
+            ranked_tags_best = [obj_tags[i] for i in ranked_idx_best if i < len(obj_tags)]
+
+            for k in k_values:
+                match, _ = _check_retrieval_match(ranked_tags_best, answer, k)
+                if match:
+                    results_best[f"recall@{k}"] += 1
+
+    for k in k_values:
+        results_avg[f"recall@{k}"] /= max(n_queries, 1)
+    if results_best is not None:
+        for k in k_values:
+            results_best[f"recall@{k}"] /= max(n_queries, 1)
+
+    output: dict[str, Any] = {
+        "status": "evaluated",
+        "n_queries": n_queries,
+        "n_objects": len(objects),
         "k_values": k_values,
-        "n_queries": len(queries),
-        "n_objects": len(scene_graph.get("objects", [])),
+        "weighted_avg": results_avg,
     }
+    if results_best is not None:
+        output["best_view"] = results_best
+
+    return output
 
 
 # ---------------------------------------------------------------------------
 # Standalone entry point
 # ---------------------------------------------------------------------------
 
+def _load_questions(path: str | Path) -> list[dict] | None:
+    """Load Space3D-Bench questions+answers into [{question, answer}, ...]."""
+    q_path = Path(path)
+    if not q_path.is_file():
+        logger.warning("Questions file not found: %s", q_path)
+        return None
+
+    with open(q_path) as f:
+        data = json.load(f)
+
+    # Space3D-Bench format: {"1": "question text", ...}
+    # Paired answers file lives alongside as answers.json
+    answers_path = q_path.parent / "answers.json"
+    answers: dict = {}
+    if answers_path.is_file():
+        with open(answers_path) as f:
+            answers = json.load(f)
+
+    queries: list[dict] = []
+    if isinstance(data, dict):
+        for qid, question in data.items():
+            entry: dict[str, str] = {"question": question}
+            if qid in answers:
+                ans = answers[qid]
+                entry["answer"] = ans if isinstance(ans, str) else str(ans)
+            queries.append(entry)
+    elif isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                queries.append(item)
+            elif isinstance(item, str):
+                queries.append({"question": item, "answer": ""})
+    return queries if queries else None
+
+
 def main_standalone(cfg):
     """Run evaluation on a scene graph variant."""
+    from semgraph.encoding import get_encoder
     from semgraph.stages.paths import stage_paths
     from semgraph.io import load_variant
     from semgraph.slam.utils import process_cfg
@@ -238,8 +389,14 @@ def main_standalone(cfg):
     paths = stage_paths(cfg)
 
     eval_cfg = cfg.get("eval", {}) if hasattr(cfg, "get") else {}
-    encoder_name = eval_cfg.get("encoder", "openai_clip-vit-large-patch14")
+    encoder_name = eval_cfg.get("encoder", "laion_CLIP-ViT-bigG-14-laion2B-39B-b160k")
     vlm_name = eval_cfg.get("vlm", "Qwen_Qwen3-VL-2B-Instruct")
+    encoder_type = eval_cfg.get("encoder_type", "hf_clip")
+
+    # Text encoder override for frozen-encoder pairing experiments
+    text_encoder_type = eval_cfg.get("text_encoder_type", "") or ""
+    text_encoder_name = eval_cfg.get("text_encoder_name", "") or ""
+    questions_path = eval_cfg.get("questions", "") or ""
 
     safe_enc = encoder_name.replace("/", "_")
     safe_vlm = vlm_name.replace("/", "_")
@@ -278,8 +435,46 @@ def main_standalone(cfg):
     # Retrieval
     print("\n[eval] === Retrieval ===")
     embed_variant = load_variant(paths["variants"], f"embed_{safe_enc}")
-    ret_results = evaluate_retrieval(scene_graph, embed_variant)
-    print(f"  Status: {ret_results['status']}")
+
+    queries = None
+    if questions_path:
+        queries = _load_questions(questions_path)
+        if queries:
+            print(f"  Loaded {len(queries)} queries from {questions_path}")
+        else:
+            print(f"  No queries loaded from {questions_path}")
+
+    text_enc = None
+    device = "cuda"
+    if queries:
+        if text_encoder_type and text_encoder_name:
+            print(f"  Text encoder override: {text_encoder_type}/{text_encoder_name}")
+            text_enc = get_encoder(text_encoder_type, text_encoder_name, device)
+        else:
+            print(f"  Using image encoder for text: {encoder_type}/{encoder_name}")
+            text_enc = get_encoder(encoder_type, encoder_name, device)
+
+    ret_results = evaluate_retrieval(
+        scene_graph, embed_variant, queries, text_enc,
+    )
+
+    if ret_results.get("status") == "evaluated":
+        print(f"  Queries: {ret_results['n_queries']}, Objects: {ret_results['n_objects']}")
+        print("  Weighted-avg retrieval:")
+        for metric, val in ret_results["weighted_avg"].items():
+            print(f"    {metric}: {val:.4f}")
+        if "best_view" in ret_results:
+            print("  Best-view retrieval:")
+            for metric, val in ret_results["best_view"].items():
+                print(f"    {metric}: {val:.4f}")
+    else:
+        print(f"  Status: {ret_results.get('status', 'unknown')}")
+        if "reason" in ret_results:
+            print(f"  Reason: {ret_results['reason']}")
+
+    # Cleanup text encoder if it supports it
+    if text_enc is not None and hasattr(text_enc, "cleanup"):
+        text_enc.cleanup()
 
     # Save results
     results = {
@@ -292,7 +487,7 @@ def main_standalone(cfg):
 
     eval_dir = paths["eval"] / f"{safe_enc}_{safe_vlm}"
     eval_dir.mkdir(parents=True, exist_ok=True)
-    results_path = eval_dir / "classification.json"
+    results_path = eval_dir / "eval_results.json"
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2)
     print(f"\n[eval] Results saved to {results_path}")
@@ -302,7 +497,7 @@ if __name__ == "__main__":
     import hydra
     from omegaconf import DictConfig
 
-    @hydra.main(version_base=None, config_path="../../hydra_configs", config_name="batch_vlm_mapping_api")
+    @hydra.main(version_base=None, config_path="../hydra_configs", config_name="batch_vlm_mapping_api")
     def main(cfg: DictConfig):
         main_standalone(cfg)
 

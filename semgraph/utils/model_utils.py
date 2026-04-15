@@ -96,6 +96,11 @@ def compute_tinyclip_features_batched(
         image_features = clip_model.get_image_features(**image_inputs)
         text_features = clip_model.get_text_features(**text_inputs)
 
+    if not isinstance(image_features, torch.Tensor):
+        image_features = image_features.pooler_output if hasattr(image_features, "pooler_output") else image_features[1]
+    if not isinstance(text_features, torch.Tensor):
+        text_features = text_features.pooler_output if hasattr(text_features, "pooler_output") else text_features[1]
+
     image_features = F.normalize(image_features, dim=-1)
     text_features = F.normalize(text_features, dim=-1)
 

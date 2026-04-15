@@ -242,7 +242,7 @@ def main_standalone(cfg):
     paths = stage_paths(cfg)
 
     assemble_cfg = cfg.get("assemble", {}) if hasattr(cfg, "get") else {}
-    encoder_name = assemble_cfg.get("encoder", "openai_clip-vit-large-patch14")
+    encoder_name = assemble_cfg.get("encoder", "laion_CLIP-ViT-bigG-14-laion2B-39B-b160k")
     vlm_name = assemble_cfg.get("vlm", "Qwen_Qwen3-VL-2B-Instruct")
 
     oracle = load_oracle_scene(paths["oracle"])
@@ -308,7 +308,7 @@ if __name__ == "__main__":
     import hydra
     from omegaconf import DictConfig
 
-    @hydra.main(version_base=None, config_path="../../hydra_configs", config_name="batch_vlm_mapping_api")
+    @hydra.main(version_base=None, config_path="../hydra_configs", config_name="batch_vlm_mapping_api")
     def main(cfg: DictConfig):
         main_standalone(cfg)
 

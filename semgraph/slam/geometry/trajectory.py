@@ -75,3 +75,10 @@ class TrajectoryBackend(GeometryBackend):
 
     def num_iterations(self, ctx: TrajectoryContext) -> int:
         return len(ctx.dataset)
+
+    def get_poses(self, ctx: TrajectoryContext) -> dict[int, np.ndarray]:
+        dataset = ctx.dataset
+        return {
+            i: dataset.poses[i].cpu().numpy()
+            for i in range(len(dataset))
+        }

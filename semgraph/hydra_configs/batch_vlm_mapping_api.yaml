@@ -76,7 +76,10 @@ use_wandb: ${oc.env:USE_WANDB,false}
 
 # embed.py config
 embed:
-  encoder_name: ${oc.env:EMBED_ENCODER,openai/clip-vit-large-patch14}
+  encoder_type: ${oc.env:EMBED_ENCODER_TYPE,hf_clip}
+  encoder_name: ${oc.env:EMBED_ENCODER,laion/CLIP-ViT-bigG-14-laion2B-39B-b160k}
+  dtype: ${oc.env:EMBED_DTYPE,float16}
+  use_proj: !!bool false           # VLM-only: return proj_feats instead of vit_feats
   mode: phase_a                    # "phase_a" or "re_embed"
   use_sam_fusion: !!bool false     # +3.3% accuracy per Bare Necessities Table 9
 
@@ -87,13 +90,21 @@ caption:
 
 # semantic_assemble.py config (Phase B)
 assemble:
-  encoder: ${oc.env:ASSEMBLE_ENCODER,openai_clip-vit-large-patch14}
+  encoder: ${oc.env:ASSEMBLE_ENCODER,laion_CLIP-ViT-bigG-14-laion2B-39B-b160k}
   vlm: ${oc.env:ASSEMBLE_VLM,Qwen_Qwen3-VL-2B-Instruct}
 
 # eval.py config (Phase B)
 eval:
-  encoder: ${oc.env:EVAL_ENCODER,openai_clip-vit-large-patch14}
+  encoder: ${oc.env:EVAL_ENCODER,laion_CLIP-ViT-bigG-14-laion2B-39B-b160k}
+  encoder_type: ${oc.env:EVAL_ENCODER_TYPE,hf_clip}
+  text_encoder_type: ${oc.env:EVAL_TEXT_ENCODER_TYPE,}
+  text_encoder_name: ${oc.env:EVAL_TEXT_ENCODER,}
   vlm: ${oc.env:EVAL_VLM,Qwen_Qwen3-VL-2B-Instruct}
+  questions: ${oc.env:EVAL_QUESTIONS,}
   gt_labels: config/eval_1687_labels.txt
   categories: config/grouped_17_categories.json
   use_subgraph: !!bool false
+
+# build_map.py config
+build_map:
+  matching_mode: incremental       # "incremental" (frame-by-frame) or "batch" (all-pairs clustering)

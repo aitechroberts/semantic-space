@@ -102,7 +102,7 @@ class TestMakeEmptyGobs:
     def test_has_all_keys(self):
         from semgraph.stages.paths import RawGobs, make_empty_gobs
 
-        gobs = make_empty_gobs(5)
+        gobs = make_empty_gobs(5, feat_dim=128)
         expected_keys = set(RawGobs.__annotations__.keys())
         assert set(gobs.keys()) == expected_keys, f"Missing keys: {expected_keys - set(gobs.keys())}"
 
@@ -124,6 +124,6 @@ class TestMakeEmptyGobs:
     def test_zero_detections(self):
         from semgraph.stages.paths import make_empty_gobs
 
-        gobs = make_empty_gobs(0)
+        gobs = make_empty_gobs(0, feat_dim=128)
         assert gobs["xyxy"].shape == (0, 4)
         assert len(gobs["captions"]) == 0
