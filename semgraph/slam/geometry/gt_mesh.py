@@ -44,6 +44,8 @@ class GTMeshContext:
     frames: list[dict]
     class_map: dict[int, str]
     seg_backend: str
+    best_views_k: int = 5
+    min_visible_points: int = 50
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +96,8 @@ class GTMeshBackend(GeometryBackend):
             frames=frames,
             class_map=class_map,
             seg_backend=seg_backend,
+            best_views_k=int(cfg.get("gt_mesh_best_views_k", 5)),
+            min_visible_points=int(cfg.get("gt_mesh_min_visible_points", 50)),
         )
 
     # ------------------------------------------------------------------
@@ -107,9 +111,23 @@ class GTMeshBackend(GeometryBackend):
             yield from self._iter_frames(ctx)
 
     def _iter_gt_instances(self, ctx: GTMeshContext) -> Iterator[FrameContext]:
-        """Object-first loop: one FrameContext per GT instance."""
-        top_k = 5
-        min_vis = 50
+        """Object-first loop: K FrameContexts per GT instance (one per best-view).
+
+        Each yielded FrameContext carries the same instance PCD but a
+        per-view image/pose/intrinsics and a 2D xyxy/mask derived from
+        projecting that instance into that view.  ``skip_matching`` is
+        intentionally False: the matching path in ``build_map`` is
+        responsible for merging the K views of each instance into a
+        single map object and seeding ``per_view_records``.
+
+        ``instance_id`` rides on both the FrameContext and on the
+        ``raw_gobs["gt_instance_id"]`` sidecar so it survives the
+        detect → frame_data.npz → build_map pipeline.  In ``evaluate``
+        matching mode it becomes the force-match key; in ``tune`` mode
+        it rides along as a diagnostic label for the merge report.
+        """
+        top_k = ctx.best_views_k
+        min_vis = ctx.min_visible_points
 
         for obj_idx, (iid, pcd) in enumerate(ctx.instance_pcds.items()):
             pts = np.asarray(pcd.points)
@@ -122,56 +140,68 @@ class GTMeshBackend(GeometryBackend):
             if not best_views:
                 continue
 
-            best = best_views[0]
-            image_rgb = self._load_image(best["color_path"])
-            H, W = image_rgb.shape[:2]
-
-            pixel_coords, valid = project_points_to_frame(
-                pts, best["pose"], best["intrinsics"], H, W,
-            )
-            u = pixel_coords[valid, 0].astype(int)
-            v = pixel_coords[valid, 1].astype(int)
-            x_min, x_max = max(0, u.min()), min(W, u.max() + 1)
-            y_min, y_max = max(0, v.min()), min(H, v.max() + 1)
-            xyxy = np.array([[x_min, y_min, x_max, y_max]], dtype=np.float32)
-
-            mask = np.zeros((1, H, W), dtype=bool)
-            mask[0, v, u] = True
-
             class_name = ctx.class_map.get(iid, "object")
 
-            raw_gobs = {
-                "xyxy": xyxy,
-                "confidence": np.array([1.0], dtype=np.float32),
-                "class_id": np.array([0], dtype=np.int32),
-                "mask": mask,
-                "classes": [class_name],
-                "image_crops": [],
-                "image_feats": np.zeros((1, 512), dtype=np.float32),
-                "text_feats": np.zeros((1, 512), dtype=np.float32),
-                "detection_class_labels": [f"{class_name} 0"],
-                "labels": [f"{class_name} 0"],
-                "edges": [],
-                "captions": [class_name],
-                "vlm_vit_feats": None,
-                "vlm_proj_feats": None,
-            }
+            for view_idx, (view, n_visible) in enumerate(best_views):
+                image_rgb = self._load_image(view["color_path"])
+                H, W = image_rgb.shape[:2]
 
-            yield FrameContext(
-                frame_idx=obj_idx,
-                color_path=Path(best["color_path"]),
-                image_rgb=image_rgb,
-                intrinsics=best["intrinsics"],
-                pose=best["pose"],
-                skip_segmentation=True,
-                skip_matching=True,
-                instance_id=iid,
-                extra={
-                    "raw_gobs": raw_gobs,
-                    "instance_pcd": pcd,
-                    "best_views": best_views,
-                },
-            )
+                pixel_coords, valid = project_points_to_frame(
+                    pts, view["pose"], view["intrinsics"], H, W,
+                )
+                if not valid.any():
+                    continue
+
+                u = pixel_coords[valid, 0].astype(int)
+                v = pixel_coords[valid, 1].astype(int)
+                x_min, x_max = max(0, u.min()), min(W, u.max() + 1)
+                y_min, y_max = max(0, v.min()), min(H, v.max() + 1)
+                xyxy = np.array([[x_min, y_min, x_max, y_max]], dtype=np.float32)
+
+                mask = np.zeros((1, H, W), dtype=bool)
+                mask[0, v, u] = True
+
+                # NOTE: ``gt_instance_id`` and ``n_visible`` are NOT stored
+                # here.  ``raw_gobs`` has the strict 14-key RawGobs schema
+                # and gets run through ``filter_gobs`` in detect.py, which
+                # iterates every key and only handles list/ndarray/None —
+                # bare ints crash it with ``NotImplementedError: Unhandled
+                # type <class 'int'>``.  Both values ride on the
+                # FrameContext (``instance_id`` + ``extra["n_visible"]``)
+                # and ``_lift_gt_instance`` pulls them from there onto the
+                # detection dict, which is where detect.py reads them.
+                raw_gobs = {
+                    "xyxy": xyxy,
+                    "confidence": np.array([1.0], dtype=np.float32),
+                    "class_id": np.array([0], dtype=np.int32),
+                    "mask": mask,
+                    "classes": [class_name],
+                    "image_crops": [image_rgb[y_min:y_max, x_min:x_max]],
+                    "image_feats": np.zeros((1, 512), dtype=np.float32),
+                    "text_feats": np.zeros((1, 512), dtype=np.float32),
+                    "detection_class_labels": [f"{class_name} 0"],
+                    "labels": [f"{class_name} 0"],
+                    "edges": [],
+                    "captions": [class_name],
+                    "vlm_vit_feats": None,
+                    "vlm_proj_feats": None,
+                }
+
+                yield FrameContext(
+                    frame_idx=obj_idx * top_k + view_idx,
+                    color_path=Path(view["color_path"]),
+                    image_rgb=image_rgb,
+                    intrinsics=view["intrinsics"],
+                    pose=view["pose"],
+                    skip_segmentation=True,
+                    skip_matching=False,
+                    instance_id=int(iid),
+                    extra={
+                        "raw_gobs": raw_gobs,
+                        "instance_pcd": pcd,
+                        "n_visible": int(n_visible),
+                    },
+                )
 
     def _iter_frames(self, ctx: GTMeshContext) -> Iterator[FrameContext]:
         """Frame-first loop: one FrameContext per camera frame."""
@@ -206,10 +236,23 @@ class GTMeshBackend(GeometryBackend):
     def _lift_gt_instance(
         self, frame_ctx: FrameContext, cfg: Any
     ) -> list[dict | None]:
-        """Direct PCD from mesh — used in gt_instances mode."""
+        """Direct PCD from mesh — used in gt_instances mode.
+
+        Propagates ``gt_instance_id`` (semantic mesh instance id) and
+        ``n_visible`` (view-quality weight from ``select_best_views``) onto
+        the detection dict so they survive detect.py serialization and
+        reach the matching path.  These fields are harmless for other
+        modes — detect.py only reads them when present.
+        """
         pcd = frame_ctx.extra["instance_pcd"]
         bbox = get_bounding_box(cfg.get("spatial_sim_type", "iou"), pcd)
-        return [{"pcd": pcd, "bbox": bbox}]
+        det: dict[str, Any] = {"pcd": pcd, "bbox": bbox}
+        if frame_ctx.instance_id is not None:
+            det["gt_instance_id"] = int(frame_ctx.instance_id)
+        n_visible = frame_ctx.extra.get("n_visible")
+        if n_visible is not None:
+            det["n_visible"] = int(n_visible)
+        return [det]
 
     def _lift_mask_via_mesh(
         self,
@@ -271,13 +314,15 @@ class GTMeshBackend(GeometryBackend):
         return len(ctx.frames)
 
     def _precount_gt_instances(self, ctx: GTMeshContext) -> int:
-        """Count instances passing both point-threshold and view-availability filters.
+        """Count FrameContexts produced by _iter_gt_instances.
 
-        Mirrors the exact filtering logic in ``_iter_gt_instances`` so
-        ``num_iterations()`` and the actual iterator yield count agree.
+        Mirrors the exact filtering logic there (multi-view).  Each
+        accepted instance yields ``len(best_views)`` FrameContexts.
+        ``select_best_views`` now returns ``(frame, n_visible)`` pairs,
+        but the count is still ``len(best_views)``.
         """
-        top_k = 5
-        min_vis = 50
+        top_k = ctx.best_views_k
+        min_vis = ctx.min_visible_points
         count = 0
         for pcd in ctx.instance_pcds.values():
             pts = np.asarray(pcd.points)
@@ -288,7 +333,7 @@ class GTMeshBackend(GeometryBackend):
             )
             if not views:
                 continue
-            count += 1
+            count += len(views)
         return count
 
     def get_poses(self, ctx: GTMeshContext) -> dict[int, np.ndarray]:

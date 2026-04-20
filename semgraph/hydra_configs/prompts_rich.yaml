@@ -1,0 +1,47 @@
+# prompts_rich.yaml
+# Longer per-crop prompts and a richer consolidation prompt for Phase 2
+# captioning.  Same schema as prompts_standard.yaml — this file overrides the
+# caption-stage prompt bundle used by semgraph/stages/caption.py.
+#
+# Activate via:
+#   python -m semgraph.stages.caption ... +caption@caption=prompts_rich
+
+# ---------------------------------------------------------------------------
+# Caption-stage prompt bundle — read by semgraph/stages/caption.py.
+# ---------------------------------------------------------------------------
+caption:
+  top_k: 5
+  prompts:
+    caption: |-
+      Describe this object in 2-3 sentences. Include: what it is (be specific —
+      e.g. "leather office chair" not just "chair"); its physical attributes
+      (approximate size relative to the room, condition); distinguishing
+      features that differentiate it from similar objects; and any visible
+      affordances. Do not describe the surroundings.
+    color: "What is the primary color of this object? Answer with one or two words."
+    material: "What material is this object made of? Answer with one or two words."
+    consolidation: |-
+      You are given multiple captions describing the same object from different
+      viewpoints.
+      Produce:
+      1. "canonical_tag": a specific noun phrase (e.g. "leather office chair",
+         "wooden desk with metal legs"), not a single generic word.
+      2. "candidate_tags": 3-5 alternative noun phrases.
+      3. "summary": a 2-3 sentence description synthesizing all observations,
+         including physical attributes and distinguishing features.
+
+      Captions:
+      {captions}
+
+      Respond in JSON format:
+      {{"canonical_tag": "...", "candidate_tags": ["...", ...], "summary": "..."}}
+
+# ---------------------------------------------------------------------------
+# Legacy VLMAPIClient keys (used elsewhere in the mapping pipeline) — kept
+# minimal here; captioning path does not read these.
+# ---------------------------------------------------------------------------
+consolidate_prompt: >
+  Consolidate these multiple descriptions of the same object into one concise sentence:
+  {captions}
+
+  Return only the consolidated sentence as a JSON: {"consolidated_caption": "..."}

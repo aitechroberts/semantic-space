@@ -31,22 +31,28 @@ rm data.zip
 
 ## Step 3: Verify Structure
 
-After extraction, you should have:
+After extraction, you should have (v0.0.2 release — **scene
+directories live directly under the repo root, not under ``data/``**,
+and the ground-truth file is ``ground_truth.json``):
 
 ```
 Space3D-Bench/
-├── data/
-│   ├── room_0/
-│   │   ├── questions.json        # Questions for this scene
-│   │   ├── answers.json          # Ground truth answers
-│   │   └── detections/           # Curated 3D detections
-│   ├── room_1/
-│   ├── office_2/
-│   ├── office_3/
-│   └── ... (other scenes)
-├── assessment/                    # Evaluation scripts
-└── README.md
+├── room_0/
+│   ├── questions.json        # Questions for this scene
+│   ├── ground_truth.json     # Ground truth answers (NOT answers.json)
+│   ├── img/                  # Reference images for VLM-judge questions
+│   └── misc/                 # Curated 3D detections + extra assets
+├── room_1/
+├── office_2/
+├── office_3/
+└── ... (other scenes)
 ```
+
+> Older drafts of this playbook referenced ``data/<scene>/answers.json``.
+> That layout does not match the current release. The rest of the
+> pipeline uses ``generate_groundtruth/_space3d_layout.py`` to resolve
+> paths and schema consistently; if you touch any Space3D-Bench path
+> directly, go through that helper.
 
 ## Step 4: Extract Questions for Your Scenes
 
@@ -54,16 +60,17 @@ Space3D-Bench/
 # Check question counts per scene
 for scene in room_0 room_1 office_2 office_3; do
     echo -n "$scene: "
-    cat "data/${scene}/questions.json" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))"
+    cat "${scene}/questions.json" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))"
 done
 ```
 
-Expected output (approximately):
+Expected output for v0.0.2:
 ```
-room_0: ~80 questions
-room_1: ~75 questions  
-office_2: ~85 questions
-office_3: ~70 questions
+room_0:   60 questions
+room_1:   60 questions
+office_2: 60 questions
+office_3: 50 questions
+(total: 230 across the four scenes we run)
 ```
 
 ## Step 5: Understand the Data Format
@@ -77,21 +84,34 @@ office_3: ~70 questions
 }
 ```
 
-### answers.json
+### ground_truth.json
+
+Each entry is `{"answer": <str|dict>, "prompt": <str>}`. There is
+**no categorical `type` field** — the question taxonomy is encoded by
+the `answer` format itself. Representative examples:
+
 ```json
 {
-    "1": {
-        "answer": "There are 3 chairs.",
-        "type": "count",
-        "acceptance_criterion": "exact_match"
-    },
-    "2": {
-        "answer": "The sofa is blue.",
-        "type": "attribute",
-        "acceptance_criterion": "semantic_match"
-    }
+  "1":  {"answer": "3D position: [[3.669, -1.103, 0.077]]",
+         "prompt": "The answer should contain 3D positions... 0.1 m tolerance..."},
+  "17": {"answer": "Number of objects: 2",
+         "prompt": "The answer should contain a number of objects matching the ground truth."},
+  "25": {"answer": "Objects: ['book', 'candle', 'book', 'vase']",
+         "prompt": "The answer should contain a list of objects matching the ground truth..."},
+  "32": {"answer": "From object=9 at [3.7, -0.52, -1.05] to object=77 at [3.75, 2.64, -1.04] the navigable distance is 2.52 meters.",
+         "prompt": "The answer should specify the distance in meters... 0.5 m tolerance..."},
+  "49": {"answer": {"image_path": "data/room_0/img/q49.png",
+                    "example_answer": "Both sofas have the light color..."},
+         "prompt": "You are provided with the RGB image, divided..."},
+  "57": {"answer": "No",
+         "prompt": "The answer should contain a clear 'yes' or 'no' response..."}
 }
 ```
+
+`_space3d_layout.infer_type` bins those into
+`binary / object_list / qualitative / count / position / distance`. The
+Phase-B deterministic scorer handles the first three; the remainder
+are reported as `format_unsupported`.
 
 ---
 
@@ -126,13 +146,13 @@ pip install qwen-vl-utils  # For Qwen3-VL
 ## Quick Reference Commands
 
 ```bash
-# View questions for room0
-cat data/room_0/questions.json | python3 -m json.tool
+# View questions for room_0
+cat room_0/questions.json | python3 -m json.tool
 
 # Count total questions across your scenes
 total=0
 for s in room_0 room_1 office_2 office_3; do
-    n=$(cat "data/${s}/questions.json" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+    n=$(cat "${s}/questions.json" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
     total=$((total + n))
     echo "$s: $n questions"
 done
@@ -148,7 +168,7 @@ with open('all_questions.csv', 'w', newline='') as f:
     writer = csv.writer(f)
     writer.writerow(['scene', 'q_id', 'question'])
     for scene in scenes:
-        with open(f'data/{scene}/questions.json') as qf:
+        with open(f'{scene}/questions.json') as qf:
             questions = json.load(qf)
             for qid, q in questions.items():
                 writer.writerow([scene, qid, q])

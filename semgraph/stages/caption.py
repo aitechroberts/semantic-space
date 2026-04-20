@@ -57,11 +57,11 @@ def init_vlm_client(cfg: Any) -> Any | None:
 # Per-object captioning
 # ---------------------------------------------------------------------------
 
-CAPTION_PROMPT = "Describe this object in one sentence. What is it?"
-COLOR_PROMPT = "What is the primary color of this object? Answer with one or two words."
-MATERIAL_PROMPT = "What material is this object made of? Answer with one or two words."
+DEFAULT_CAPTION_PROMPT = "Describe this object in one sentence. What is it?"
+DEFAULT_COLOR_PROMPT = "What is the primary color of this object? Answer with one or two words."
+DEFAULT_MATERIAL_PROMPT = "What material is this object made of? Answer with one or two words."
 
-CONSOLIDATION_PROMPT = """You are given multiple captions describing the same object from different viewpoints.
+DEFAULT_CONSOLIDATION_PROMPT = """You are given multiple captions describing the same object from different viewpoints.
 Produce:
 1. "canonical_tag": a single noun phrase identifying the object (e.g. "office chair", "wooden desk")
 2. "candidate_tags": 3-5 alternative noun phrases that could also describe this object
@@ -73,13 +73,52 @@ Captions:
 Respond in JSON format:
 {{"canonical_tag": "...", "candidate_tags": ["...", ...], "summary": "..."}}"""
 
+# Back-compat aliases for callers that imported the old constant names.
+CAPTION_PROMPT = DEFAULT_CAPTION_PROMPT
+COLOR_PROMPT = DEFAULT_COLOR_PROMPT
+MATERIAL_PROMPT = DEFAULT_MATERIAL_PROMPT
+CONSOLIDATION_PROMPT = DEFAULT_CONSOLIDATION_PROMPT
+
+
+def _resolve_prompts(cfg: Any) -> dict[str, str]:
+    """Return the active prompt bundle, honoring an optional override bundle.
+
+    Order of precedence (highest first):
+      1. ``cfg.caption.prompts.{caption,color,material,consolidation}``
+         (e.g. populated by +caption@caption=prompts_rich).
+      2. Module-level defaults.
+
+    This lets us sweep prompt variants without monkey-patching constants.
+    """
+    prompts = {
+        "caption": DEFAULT_CAPTION_PROMPT,
+        "color": DEFAULT_COLOR_PROMPT,
+        "material": DEFAULT_MATERIAL_PROMPT,
+        "consolidation": DEFAULT_CONSOLIDATION_PROMPT,
+    }
+    caption_cfg = cfg.get("caption", {}) if hasattr(cfg, "get") else {}
+    override = caption_cfg.get("prompts") if isinstance(caption_cfg, dict) or hasattr(caption_cfg, "get") else None
+    if override:
+        for key in prompts:
+            val = override.get(key) if hasattr(override, "get") else None
+            if val:
+                prompts[key] = str(val)
+    return prompts
+
 
 def _caption_object(
     per_view_records: list[dict],
     vlm_client: Any,
     top_k: int = 10,
+    prompts: dict[str, str] | None = None,
 ) -> dict:
     """Caption a single object from its top-K views. Returns caption dict."""
+    p = prompts or {}
+    caption_prompt = p.get("caption", DEFAULT_CAPTION_PROMPT)
+    color_prompt = p.get("color", DEFAULT_COLOR_PROMPT)
+    material_prompt = p.get("material", DEFAULT_MATERIAL_PROMPT)
+    consolidation_prompt = p.get("consolidation", DEFAULT_CONSOLIDATION_PROMPT)
+
     sorted_views = sorted(per_view_records, key=lambda r: r.get("n_points", 0), reverse=True)
     selected = sorted_views[:top_k]
 
@@ -98,21 +137,21 @@ def _caption_object(
             continue
 
         try:
-            caption = vlm_client.generate(image=crop_img, prompt=CAPTION_PROMPT)
+            caption = vlm_client.generate(image=crop_img, prompt=caption_prompt)
             if caption:
                 captions.append(caption.strip())
         except Exception as exc:
             logger.debug("Caption failed: %s", exc)
 
         try:
-            color = vlm_client.generate(image=crop_img, prompt=COLOR_PROMPT)
+            color = vlm_client.generate(image=crop_img, prompt=color_prompt)
             if color:
                 colors.append(color.strip())
         except Exception:
             pass
 
         try:
-            material = vlm_client.generate(image=crop_img, prompt=MATERIAL_PROMPT)
+            material = vlm_client.generate(image=crop_img, prompt=material_prompt)
             if material:
                 materials.append(material.strip())
         except Exception:
@@ -129,7 +168,7 @@ def _caption_object(
     }
 
     if captions and vlm_client is not None:
-        consolidation_input = CONSOLIDATION_PROMPT.format(captions="\n".join(f"- {c}" for c in captions))
+        consolidation_input = consolidation_prompt.format(captions="\n".join(f"- {c}" for c in captions))
         try:
             resp = vlm_client.generate(prompt=consolidation_input)
             if resp:
@@ -194,7 +233,11 @@ def main_standalone(cfg):
     vlm_name = caption_cfg.get("vlm_name") or cfg.get("vlm_model_name", "Qwen/Qwen3-VL-2B-Instruct")
     top_k = caption_cfg.get("top_k", 10) if isinstance(caption_cfg, dict) else 10
 
-    print(f"[caption] Phase B: vlm={vlm_name}, top_k={top_k}, {n_objects} objects")
+    prompts = _resolve_prompts(cfg)
+    print(
+        f"[caption] Phase B: vlm={vlm_name}, top_k={top_k}, {n_objects} objects, "
+        f"prompt_bundle={'rich' if prompts['caption'] != DEFAULT_CAPTION_PROMPT else 'default'}"
+    )
 
     vlm_client = init_vlm_client(cfg)
     if vlm_client is None:
@@ -208,7 +251,7 @@ def main_standalone(cfg):
             {"crop_path": pm.crop_path, "n_points": pm.n_points}
             for pm in pv_meta
         ]
-        result = _caption_object(pvr_dicts, vlm_client, top_k=top_k)
+        result = _caption_object(pvr_dicts, vlm_client, top_k=top_k, prompts=prompts)
         captions_data[obj_idx] = result
 
     safe_vlm = vlm_name.replace("/", "_")

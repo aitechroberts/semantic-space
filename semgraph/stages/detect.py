@@ -515,6 +515,15 @@ def main_standalone(cfg):
                 pcd_points_list.append(pcd_pts)
                 pcd_colors_list.append(pcd_cols)
                 bbox_corners_list.append(bbox_corners)
+                # Prefer the per-det fields (set by the GT backend in
+                # _lift_gt_instance); fall back to the FrameContext's
+                # instance_id for older producers that set it only there.
+                gt_iid = det.get("gt_instance_id")
+                if gt_iid is None and frame_ctx.instance_id is not None:
+                    gt_iid = int(frame_ctx.instance_id)
+                n_vis = det.get("n_visible")
+                if n_vis is None:
+                    n_vis = frame_ctx.extra.get("n_visible")
                 det_meta_list.append(_DetectionMeta(
                     bbox_type="axis_aligned",
                     class_name=det.get("class_name", "object"),
@@ -522,6 +531,8 @@ def main_standalone(cfg):
                     inst_id=int(det.get("curr_obj_num", det_idx)),
                     n_points=len(pcd_pts),
                     crop_path=crop_rel,
+                    gt_instance_id=int(gt_iid) if gt_iid is not None else None,
+                    n_visible=int(n_vis) if n_vis is not None else None,
                 ))
 
             record = FrameDataRecord(

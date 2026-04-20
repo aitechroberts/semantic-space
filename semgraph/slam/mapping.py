@@ -15,8 +15,9 @@ from semgraph.utils.ious import (
 )
 from semgraph.slam.utils import (
     compute_overlap_matrix_general,
-    merge_obj2_into_obj1, 
-    compute_overlap_matrix_2set
+    merge_obj2_into_obj1,
+    compute_overlap_matrix_2set,
+    seed_per_view_record,
 )
 from semgraph.utils.optional_wandb_wrapper import OptionalWandB
 owandb = OptionalWandB()
@@ -74,10 +75,9 @@ def compute_visual_similarities(detection_list: DetectionList, objects: MapObjec
     det_fts = detection_list.get_stacked_values_torch('clip_ft') # (M, D)
     obj_fts = objects.get_stacked_values_torch('clip_ft') # (N, D)
 
-    det_fts = det_fts.unsqueeze(-1) # (M, D, 1)
-    obj_fts = obj_fts.T.unsqueeze(0) # (1, D, N)
-    
-    visual_sim = F.cosine_similarity(det_fts, obj_fts, dim=1) # (M, N)
+    det_norm = F.normalize(det_fts, dim=1)  # (M, D)
+    obj_norm = F.normalize(obj_fts, dim=1)  # (N, D)
+    visual_sim = det_norm @ obj_norm.T      # (M, N)
     
     return visual_sim
 
@@ -99,21 +99,64 @@ def aggregate_similarities(match_method: str, phys_bias: float, spatial_sim: tor
     return sims
 
 def match_detections_to_objects(
-    agg_sim: torch.Tensor,
+    agg_sim: "torch.Tensor | None",
     detection_threshold: float = float('-inf'),
     detection_list: "DetectionList | None" = None,
     objects: "MapObjectList | None" = None,
     iou_merge_kappa: float = 0.0,
+    gt_matching_mode: str = "tune",
 ) -> List[Optional[int]]:
-    """Match detections to objects based on similarity with IoU fallback.
+    """Match detections to objects.
 
-    For each detection:
-      1. If ``agg_sim[i].max() > detection_threshold`` → match (standard).
-      2. Else if ``iou_merge_kappa > 0`` and 3D bbox IoU with any existing
-         object > kappa → match to highest-IoU object (Sparse3DPR Eq. 7).
-      3. Else → new object (None).
+    Two paths:
+
+    * ``gt_matching_mode == "evaluate"``: force-match by ``gt_instance_id``.
+      Every detection whose ``gt_instance_id`` equals an existing object's
+      ``gt_instance_id`` is routed to that object, bypassing all similarity
+      math.  Detections without a GT id fall through to the similarity
+      path (which is a no-op for a canonical GT run because every det has
+      an id).  This preserves the 1:1 instance→object mapping the oracle
+      needs, without letting bbox-IoU or CLIP cosine collapse semantically
+      distinct instances that happen to share bounding-box airspace.
+
+    * ``gt_matching_mode == "tune"`` (default): original similarity +
+      bbox-IoU fallback.  For each detection:
+        1. If ``agg_sim[i].max() > detection_threshold`` → match (standard).
+        2. Else if ``iou_merge_kappa > 0`` and 3D bbox IoU with any
+           existing object > kappa → match to highest-IoU object
+           (Sparse3DPR Eq. 7).
+        3. Else → new object (None).
+
+      Tune mode leaves ``gt_instance_id`` on every detection so the
+      downstream tune report can score which merges were correct.
     """
     match_indices: List[Optional[int]] = []
+
+    if gt_matching_mode == "evaluate" and detection_list is not None and objects is not None:
+        # Build a gt_instance_id -> object_idx lookup from existing objects.
+        # Only objects with a non-None id participate; others are invisible
+        # to this path and remain as-is.
+        gt_to_obj: dict[int, int] = {}
+        for obj_idx, obj in enumerate(objects):
+            oid = obj.get("gt_instance_id")
+            if oid is not None:
+                gt_to_obj[int(oid)] = obj_idx
+
+        for detected_obj_idx in range(len(detection_list)):
+            det = detection_list[detected_obj_idx]
+            det_gt = det.get("gt_instance_id")
+            if det_gt is not None and int(det_gt) in gt_to_obj:
+                match_indices.append(gt_to_obj[int(det_gt)])
+            else:
+                match_indices.append(None)
+        return match_indices
+
+    # Tune mode — original similarity + bbox-IoU fallback.
+    if agg_sim is None:
+        raise ValueError(
+            "match_detections_to_objects requires agg_sim in tune mode "
+            "(gt_matching_mode != 'evaluate')."
+        )
     for detected_obj_idx in range(agg_sim.shape[0]):
         max_sim_value = agg_sim[detected_obj_idx].max()
         if max_sim_value > detection_threshold:
@@ -182,6 +225,11 @@ def merge_obj_matches(
                 "first_discovered": tracker.curr_frame_idx
             })
 
+            # Seed per_view_records with this detection's own first view so
+            # that objects never merged still carry a view record.  Without
+            # this, the only record-producing path is merge_obj2_into_obj1,
+            # leaving singletons with an empty history.
+            seed_per_view_record(detection_list[detected_obj_idx])
             objects.append(detection_list[detected_obj_idx])
         else:
 
@@ -220,6 +268,7 @@ def merge_detections_to_objects(
 ) -> MapObjectList:
     for detected_obj_idx in range(agg_sim.shape[0]):
         if agg_sim[detected_obj_idx].max() == float('-inf'):
+            seed_per_view_record(detection_list[detected_obj_idx])
             objects.append(detection_list[detected_obj_idx])
         else:
             existing_obj_match_idx = agg_sim[detected_obj_idx].argmax()

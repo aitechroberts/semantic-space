@@ -55,7 +55,7 @@ def select_best_views(
     frames: list[dict],
     top_k: int = 5,
     min_visible: int = 50,
-) -> list[dict]:
+) -> list[tuple[dict, int]]:
     """Rank camera frames by how many instance points project into their bounds.
 
     Parameters
@@ -67,8 +67,13 @@ def select_best_views(
 
     Returns
     -------
-    list[dict]
-        Up to *top_k* frame dicts, sorted by descending visibility count.
+    list[tuple[dict, int]]
+        Up to *top_k* ``(frame, n_visible)`` pairs, sorted by descending
+        visibility count.  The count is the number of instance points that
+        projected in-frustum and in-bounds for that frame; downstream
+        consumers use it both as a view-quality weight and as a post-hoc
+        knob for min-frames ablations (drop views below a threshold
+        without re-running Phase A).
     """
     scores: list[tuple[int, int]] = []
     for fi, fr in enumerate(frames):
@@ -82,7 +87,11 @@ def select_best_views(
         scores.append((int(valid.sum()), fi))
 
     scores.sort(key=lambda x: -x[0])
-    return [frames[fi] for count, fi in scores[:top_k] if count >= min_visible]
+    return [
+        (frames[fi], count)
+        for count, fi in scores[:top_k]
+        if count >= min_visible
+    ]
 
 
 def compute_projected_crop_bbox(

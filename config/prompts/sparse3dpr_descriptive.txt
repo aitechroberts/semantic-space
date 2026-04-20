@@ -1,0 +1,17 @@
+You are answering a descriptive question about a 3D indoor scene.
+Below is a scene-graph subgraph produced by Sparse3DPR-inspired retrieval
+(MST + VLM-labeled edges, plane nodes possibly flattened). Each node is
+an object with its label, color, material, bounding-box, and caption.
+Each edge is a spatial relationship.
+
+Subgraph (JSON):
+{subgraph}
+
+Question:
+{question}
+
+Ground every claim in the subgraph. Prefer the object_tag / caption /
+color / material fields over any outside world knowledge. If the
+subgraph is insufficient, say "unknown".
+
+Respond with a concise phrase or short sentence (under 15 words).

@@ -95,7 +95,7 @@ def update_map(
         match_detections_to_objects,
         merge_obj_matches,
     )
-    from semgraph.slam.utils import process_edges
+    from semgraph.slam.utils import process_edges, seed_per_view_record
 
     skip_matching = getattr(frame_ctx_or_metadata, "skip_matching", False)
     if isinstance(frame_ctx_or_metadata, dict):
@@ -105,6 +105,13 @@ def update_map(
         frame_idx = getattr(frame_ctx_or_metadata, "frame_idx", 0)
 
     if skip_matching:
+        # Seed per_view_records for each detection before extending so the
+        # skip-matching branch produces the same per-view schema as the
+        # normal matching path.  After the gt_instances multi-view refactor
+        # no GT FrameContext reaches this branch, but this keeps the branch
+        # safe for any future backend that legitimately uses it.
+        for det in det_list:
+            seed_per_view_record(det)
         objects.extend(det_list)
         match_indices = list(range(len(objects) - len(det_list), len(objects)))
         if gobs is not None:
@@ -112,28 +119,45 @@ def update_map(
         return objects, map_edges
 
     if len(objects) == 0:
+        for det in det_list:
+            seed_per_view_record(det)
         objects.extend(det_list)
         return objects, map_edges
 
-    spatial_sim = compute_spatial_similarities(
-        spatial_sim_type=cfg["spatial_sim_type"],
-        detection_list=det_list,
-        objects=objects,
-        downsample_voxel_size=cfg["downsample_voxel_size"],
-    )
-    visual_sim = compute_visual_similarities(det_list, objects)
-    agg_sim = aggregate_similarities(
-        match_method=cfg["match_method"],
-        phys_bias=cfg["phys_bias"],
-        spatial_sim=spatial_sim,
-        visual_sim=visual_sim,
-    )
+    # gt_matching_mode: "evaluate" (force-match by gt_instance_id, used for
+    # oracle construction) or "tune" (similarity + bbox-IoU fallback, used
+    # for diagnosing matching behavior against known labels).  Only GT mesh
+    # runs populate gt_instance_id; for other backends the mode is a no-op
+    # because matching falls through to the similarity path.
+    gt_matching_mode = cfg.get("gt_matching_mode", "tune")
+
+    # Skip the similarity tensors entirely in evaluate mode — they're not
+    # consulted.  This saves the O(M*N) IoU + CLIP dot product on every
+    # frame for GT runs with large N.
+    if gt_matching_mode == "evaluate":
+        agg_sim = None
+    else:
+        spatial_sim = compute_spatial_similarities(
+            spatial_sim_type=cfg["spatial_sim_type"],
+            detection_list=det_list,
+            objects=objects,
+            downsample_voxel_size=cfg["downsample_voxel_size"],
+        )
+        visual_sim = compute_visual_similarities(det_list, objects)
+        agg_sim = aggregate_similarities(
+            match_method=cfg["match_method"],
+            phys_bias=cfg["phys_bias"],
+            spatial_sim=spatial_sim,
+            visual_sim=visual_sim,
+        )
+
     match_indices = match_detections_to_objects(
         agg_sim=agg_sim,
         detection_threshold=cfg["sim_threshold"],
         detection_list=det_list,
         objects=objects,
         iou_merge_kappa=cfg.get("iou_merge_kappa", 0.0),
+        gt_matching_mode=gt_matching_mode,
     )
     objects = merge_obj_matches(
         detection_list=det_list,
@@ -316,6 +340,8 @@ def _load_detections_from_record(frame_record, cfg, SerializedDetection, deseria
             inst_id=dm.inst_id,
             n_points=dm.n_points,
             crop_path=dm.crop_path,
+            gt_instance_id=dm.gt_instance_id,
+            n_visible=dm.n_visible,
             clip_ft=frame_record.clip_ft[i] if frame_record.clip_ft is not None and i < len(frame_record.clip_ft) else None,
             text_ft=frame_record.text_ft[i] if frame_record.text_ft is not None and i < len(frame_record.text_ft) else None,
             vlm_vit_ft=None,
@@ -406,7 +432,7 @@ def build_map_batch(frame_indices, paths, cfg):
         compute_visual_similarities,
         compute_3d_bbox_iou,
     )
-    from semgraph.slam.utils import merge_obj2_into_obj1
+    from semgraph.slam.utils import merge_obj2_into_obj1, seed_per_view_record
 
     # -- Step 1: Load all detections into a flat MapObjectList --------------
     all_dets = MapObjectList()
@@ -482,6 +508,11 @@ def build_map_batch(frame_indices, paths, cfg):
     for cluster_id in range(n_components):
         members = np.where(labels == cluster_id)[0]
         seed = all_dets[int(members[0])]
+        # Explicitly seed the cluster representative's own first-view record
+        # before any merges.  merge_obj2_into_obj1 also back-fills this as a
+        # defense, but doing it here mirrors the incremental matching path
+        # and makes singleton clusters (no merges) still carry a record.
+        seed_per_view_record(seed)
         for m_idx in members[1:]:
             seed = merge_obj2_into_obj1(
                 obj1=seed,
@@ -535,6 +566,19 @@ def main_standalone(cfg):
             cfg["obj_min_detections"] = preset["obj_min_detections"]
             print(f"[build_map] Auto-filter preset: {preset_name} "
                   f"(min_det={cfg['obj_min_detections']}, min_pts={cfg['obj_min_points']})")
+
+    # In evaluate mode, force the 1:1 instance→object invariant all the way
+    # through maintenance.  Min-detections and the PCD-overlap final merge
+    # are both cross-instance hazards here: a short-K instance (say only 2
+    # qualifying views) would get filtered by obj_min_detections=3, and
+    # small GT instances sitting inside a larger instance's PCD bbox can
+    # trip merge_overlap_thresh.  merge_overlap_thresh=-1 disables the
+    # final merge; obj_min_detections=1 keeps every instance.
+    if cfg.get("gt_matching_mode") == "evaluate":
+        cfg["obj_min_detections"] = 1
+        cfg["obj_min_points"] = 0
+        cfg["merge_overlap_thresh"] = -1
+        print("[build_map] evaluate mode: obj_min_detections=1, obj_min_points=0, merge_overlap_thresh=-1")
 
     matching_mode = cfg.get("build_map", {}).get("matching_mode", "incremental")
     if matching_mode == "batch":

@@ -71,7 +71,25 @@ class HFSiglipEncoder(EmbeddingEncoder):
             encoder_name, cache_dir=cache_dir,
         )
         self._model.eval()
-        self._feat_dim: int = self._model.config.projection_dim
+        # SigLIP vision tower uses SiglipMultiheadAttentionPoolingHead, which
+        # keeps features at ``vision_config.hidden_size`` (no nn.Linear
+        # projection on the image side).  ``SiglipConfig`` does NOT expose
+        # ``projection_dim`` (that's the CLIP name), and ``projection_size``
+        # exists only on ``text_config``, not ``vision_config``.  Since
+        # ``encode_images`` calls ``get_image_features`` the correct dim is
+        # ``vision_config.hidden_size``; we fall back to a top-level
+        # ``hidden_size`` for edge cases (e.g. a ``SiglipVisionModel`` loaded
+        # directly without the composite config).
+        cfg = self._model.config
+        vcfg = getattr(cfg, "vision_config", None) or cfg
+        self._feat_dim: int = int(
+            getattr(vcfg, "hidden_size", None)
+            or getattr(cfg, "hidden_size", 0)
+        )
+        if self._feat_dim <= 0:
+            raise RuntimeError(
+                f"Could not determine feat_dim for {encoder_name} from config"
+            )
 
     # -- ABC implementation --------------------------------------------------
 

@@ -153,9 +153,18 @@ mesh_path: ${oc.env:MESH_PATH,}
 mesh_format: ${oc.env:MESH_FORMAT,replica}       # "replica", "scannetpp", "ai2thor", "matterport"
 instance_label_key: "objectId"
 instance_class_map: ${oc.env:INSTANCE_CLASS_MAP,}
-gt_mesh_best_views_k: 5
+gt_mesh_best_views_k: ${oc.env:GT_MESH_BEST_VIEWS_K,10}
 gt_mesh_crop_scale: 1.5
-gt_mesh_min_visible_points: 50
+gt_mesh_min_visible_points: ${oc.env:GT_MESH_MIN_VISIBLE_POINTS,50}
+
+# GT matching mode — only consulted when the frame_data carries
+# gt_instance_id (i.e. the gt_instances segmentation backend).
+#   evaluate: force-match by gt_instance_id.  Preserves the 1:1
+#             instance→object invariant regardless of bbox-IoU or CLIP
+#             noise.  Used to build the canonical oracle map.
+#   tune:     original similarity + bbox-IoU fallback.  Used to diagnose
+#             matching behavior against known labels and emit tune_report.
+gt_matching_mode: ${oc.env:GT_MATCHING_MODE,evaluate}
 
 # =============================================================================
 # sparse mode — DUSt3R RGB-only reconstruction

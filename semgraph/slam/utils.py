@@ -271,6 +271,65 @@ def get_bounding_box(spatial_sim_type, pcd):
     else:
         return pcd.get_axis_aligned_bounding_box()
 
+def _record_from_obj(obj) -> dict:
+    """Build the canonical per_view_records dict from a live object/detection.
+
+    Mirrors the dict shape appended inside merge_obj2_into_obj1 so that
+    first-detection seeds and merge appends share one schema.
+
+    ``n_visible`` is the projected-vertex visibility count from
+    ``select_best_views`` and is preserved per-view so downstream
+    min-frames ablations can re-rank views post-hoc without re-running
+    Phase A.  It's ``None`` for non-GT backends.
+    """
+    clip_ft_np = None
+    ft = obj.get("clip_ft")
+    if ft is not None:
+        clip_ft_np = ft.detach().cpu().numpy() if hasattr(ft, "cpu") else np.asarray(ft)
+
+    image_idx = obj.get("image_idx")
+    if isinstance(image_idx, list):
+        frame_idx = image_idx[-1] if image_idx else None
+    else:
+        frame_idx = image_idx
+
+    pcd = obj.get("pcd")
+    if pcd is not None:
+        n_pts = len(np.asarray(pcd.points))
+    else:
+        n_pts = int(obj.get("n_points", 0))
+
+    n_visible = obj.get("n_visible")
+    gt_iid = obj.get("gt_instance_id")
+
+    return {
+        "frame_idx": frame_idx,
+        "clip_ft": clip_ft_np,
+        "n_points": n_pts,
+        "crop_path": obj.get("crop_path", ""),
+        "crop_bbox": None,
+        "n_visible": int(n_visible) if n_visible is not None else None,
+        "gt_instance_id": int(gt_iid) if gt_iid is not None else None,
+    }
+
+
+def seed_per_view_record(obj: dict) -> dict:
+    """Ensure obj["per_view_records"] carries its own first-view record.
+
+    Idempotent: a no-op if ``per_view_records`` is already present and
+    non-empty.  Mutates and returns ``obj``.
+
+    Call this at every site that introduces a detection as a new map
+    object without going through ``merge_obj2_into_obj1`` (first-detection
+    append, skip_matching extend, batch-mode cluster seed).
+    """
+    existing = obj.get("per_view_records")
+    if existing:
+        return obj
+    obj["per_view_records"] = [_record_from_obj(obj)]
+    return obj
+
+
 # @profile
 def merge_obj2_into_obj1(obj1, obj2, downsample_voxel_size, dbscan_remove_noise, dbscan_eps, dbscan_min_points, spatial_sim_type, device, run_dbscan=True):
 
@@ -289,13 +348,26 @@ def merge_obj2_into_obj1(obj1, obj2, downsample_voxel_size, dbscan_remove_noise,
     global tracker
     
     tracker.track_merge(obj1, obj2)
-    
+
+    # Seed obj1's own first-view record BEFORE any mutations so that the
+    # captured clip_ft/n_points/crop_path reflect its original single-view
+    # state, not the post-merge averaged state.  After seed_per_view_record
+    # lands at every first-detection site this becomes a no-op; keep it
+    # here as a belt-and-suspenders guard for any path we haven't wired.
+    if not obj1.get("per_view_records"):
+        obj1["per_view_records"] = [_record_from_obj(obj1)]
+
     # Attributes to be explicitly handled
     extend_attributes = ['image_idx', 'color_path', 'class_id', 'captions']
     add_attributes = ['num_detections', 'num_obj_in_class']
     skip_attributes = [
         'id', 'class_name', 'is_background', 'new_counter', 'curr_obj_num', 'inst_color',
         'mask', 'mask_idx', 'xyxy', 'conf', 'contain_number', 'caption',
+        # GT-mesh fields — gt_instance_id is invariant under a correct merge
+        # (both ops carry the same id by construction in evaluate mode);
+        # n_visible is per-view so it lives on per_view_records, not on the
+        # merged object.
+        'gt_instance_id', 'n_visible',
     ]
     custom_handled = ['pcd', 'bbox', 'clip_ft', 'text_ft', 'n_points', 'vlm_vit_ft', 'vlm_proj_ft', 'per_view_records', 'crop_path']
 
@@ -337,21 +409,12 @@ def merge_obj2_into_obj1(obj1, obj2, downsample_voxel_size, dbscan_remove_noise,
             obj1[vlm_key] = (obj1[vlm_key] * n_obj1_det + obj2[vlm_key] * n_obj2_det) / (n_obj1_det + n_obj2_det)
             obj1[vlm_key] = F.normalize(obj1[vlm_key], dim=0)
 
-    # Append incoming detection to per_view_records for Phase B view selection.
-    # n_points is the ranking signal for top-K view selection in captioning.
-    if "per_view_records" not in obj1:
-        obj1["per_view_records"] = []
-    clip_ft_np = None
-    if obj2.get("clip_ft") is not None:
-        ft = obj2["clip_ft"]
-        clip_ft_np = ft.detach().cpu().numpy() if hasattr(ft, "cpu") else np.asarray(ft)
-    obj1["per_view_records"].append({
-        "frame_idx": obj2.get("image_idx", [None])[-1] if isinstance(obj2.get("image_idx"), list) else obj2.get("image_idx"),
-        "clip_ft": clip_ft_np,
-        "n_points": len(np.asarray(obj2["pcd"].points)),
-        "crop_path": obj2.get("crop_path", ""),
-        "crop_bbox": None,
-    })
+    # Append obj2's record to obj1's per_view_records.  obj1's own first
+    # record was seeded at the top of this function (before any mutation)
+    # so merged_obj["per_view_records"] has one entry per contributing
+    # detection.  n_points is the ranking signal for top-K view selection
+    # in captioning.
+    obj1["per_view_records"].append(_record_from_obj(obj2))
 
     return obj1
 
@@ -721,10 +784,16 @@ def merge_objects(
     do_edges: bool = False,
     map_edges = None,
 ):
+    # Early-return branches must honor the ``do_edges`` arity contract,
+    # otherwise callers that pass ``do_edges=True`` and unpack ``(objects,
+    # map_edges)`` blow up with ``ValueError: not enough values to unpack``.
+    # The ``merge_overlap_thresh <= 0`` sentinel (documented in
+    # ``base_mapping.yaml`` as "do not perform merge_overlap_objects()") and
+    # the empty-list guard both fall into this path.
     if len(objects) == 0:
-        return objects
+        return (objects, map_edges) if do_edges else objects
     if merge_overlap_thresh <= 0:
-        return objects
+        return (objects, map_edges) if do_edges else objects
 
     # Assuming compute_overlap_matrix requires only `objects` and `downsample_voxel_size`
     overlap_matrix = compute_overlap_matrix_general(

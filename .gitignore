@@ -3,6 +3,8 @@ semgraph/outputs
 semgraph/scripts/wandb
 semgraph/results
 semgraph/tmp
+generate_groundtruth/
+geometry_tuning/
 manipulation/contact_graspnet/examples
 manipulation/contact_graspnet/test_data
 manipulation/contact_graspnet/checkpoints

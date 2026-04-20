@@ -61,6 +61,7 @@ def stage_paths(cfg: Any) -> dict[str, Path]:
         "oracle":        stages / "oracle",
         "variants":      stages / "variants",
         "assembled":     stages / "assembled",
+        "scene_graphs":  stages / "scene_graphs",
         "eval":          stages / "eval",
         "geo_eval":      stages / "geo_eval",
         "exp_out":       _build_exp_path(base, scene, cfg.exp_suffix),
@@ -161,6 +162,9 @@ class SerializedDetection(TypedDict, total=False):
     Geometry fields (pcd_points, bbox_corners, etc.) are always present.
     Feature fields (clip_ft, text_ft) are ``None`` after detect.py and
     populated by embed.py.
+
+    ``gt_instance_id`` and ``n_visible`` are populated only in GT mesh
+    mode (``gt_instances`` backend).  Everywhere else they stay ``None``.
     """
 
     # --- always present (from detect.py) ---
@@ -173,6 +177,9 @@ class SerializedDetection(TypedDict, total=False):
     inst_id: int                 # detection index within this frame
     n_points: int                # len(pcd_points), for quick filtering
     crop_path: str               # path to saved 1.5x crop image
+    # --- GT-mesh only (from gt_instances backend) ---
+    gt_instance_id: int | None   # semantic GT instance id, force-match key in evaluate mode
+    n_visible: int | None        # visibility score from select_best_views
     # --- optional (populated by embed.py) ---
     clip_ft: np.ndarray | None   # (D,) float32
     text_ft: np.ndarray | None   # (D,) float32

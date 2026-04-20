@@ -343,6 +343,8 @@ def serialize_detection(det: dict, spatial_sim_type: str) -> SerializedDetection
         inst_id=int(det.get("curr_obj_num", 0)),
         n_points=len(pcd_points),
         crop_path=det.get("crop_path", ""),
+        gt_instance_id=det.get("gt_instance_id"),
+        n_visible=det.get("n_visible"),
         clip_ft=_to_numpy(det.get("clip_ft")),
         text_ft=_to_numpy(det.get("text_ft")),
         vlm_vit_ft=_to_numpy(det.get("vlm_vit_ft")),
@@ -392,6 +394,8 @@ def deserialize_detection(data: SerializedDetection, device: str = "cpu") -> dic
         "n_points": data["n_points"],
         "inst_id": data["inst_id"],
         "crop_path": data.get("crop_path", ""),
+        "gt_instance_id": data.get("gt_instance_id"),
+        "n_visible": data.get("n_visible"),
     }
 
 

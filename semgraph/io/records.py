@@ -132,13 +132,21 @@ class RawDetRecord:
 
 @dataclass
 class _DetectionMeta:
-    """JSON-safe metadata for one detection inside a frame."""
+    """JSON-safe metadata for one detection inside a frame.
+
+    ``gt_instance_id`` and ``n_visible`` are populated only by the GT mesh
+    backend (``gt_instances`` mode).  They stay ``None`` everywhere else
+    and are treated as optional on deserialization, so adding them is
+    backward-compatible with existing ``frame_data/*.json`` blobs.
+    """
     bbox_type: str = "axis_aligned"
     class_name: str = "object"
     class_id: int = 0
     inst_id: int = 0
     n_points: int = 0
     crop_path: str = ""
+    gt_instance_id: int | None = None
+    n_visible: int | None = None
 
 
 @dataclass
@@ -221,6 +229,8 @@ class FrameDataRecord:
                     "inst_id": dm.inst_id,
                     "n_points": dm.n_points,
                     "crop_path": dm.crop_path,
+                    "gt_instance_id": dm.gt_instance_id,
+                    "n_visible": dm.n_visible,
                 }
                 for dm in self.det_meta
             ],
@@ -249,6 +259,16 @@ class FrameDataRecord:
                 inst_id=int(d.get("inst_id", 0)),
                 n_points=int(d.get("n_points", 0)),
                 crop_path=d.get("crop_path", ""),
+                gt_instance_id=(
+                    int(d["gt_instance_id"])
+                    if d.get("gt_instance_id") is not None
+                    else None
+                ),
+                n_visible=(
+                    int(d["n_visible"])
+                    if d.get("n_visible") is not None
+                    else None
+                ),
             )
             for d in det_dicts
         ]
@@ -310,11 +330,19 @@ class CaptionsRecord:
 
 @dataclass
 class _PerViewMeta:
-    """Non-array fields of a per_view_record (JSON-safe)."""
+    """Non-array fields of a per_view_record (JSON-safe).
+
+    ``gt_instance_id`` and ``n_visible`` are populated only in GT mesh
+    mode; they stay ``None`` for trajectory / sparse / SAM-auto runs and
+    deserialize from absent keys via ``.get`` fallbacks, so the schema is
+    backward-compatible with existing oracle_scene.json blobs.
+    """
     frame_idx: int = 0
     n_points: int = 0
     crop_path: str = ""
     crop_bbox: list[int] = field(default_factory=list)
+    gt_instance_id: int | None = None
+    n_visible: int | None = None
 
 
 @dataclass
@@ -375,6 +403,8 @@ class OracleSceneRecord:
                     "n_points": p.n_points,
                     "crop_path": p.crop_path,
                     "crop_bbox": p.crop_bbox,
+                    "gt_instance_id": p.gt_instance_id,
+                    "n_visible": p.n_visible,
                 }
                 for p in obj_pvr
             ])
@@ -410,6 +440,16 @@ class OracleSceneRecord:
                     n_points=int(r.get("n_points", 0)),
                     crop_path=r.get("crop_path", ""),
                     crop_bbox=r.get("crop_bbox", []),
+                    gt_instance_id=(
+                        int(r["gt_instance_id"])
+                        if r.get("gt_instance_id") is not None
+                        else None
+                    ),
+                    n_visible=(
+                        int(r["n_visible"])
+                        if r.get("n_visible") is not None
+                        else None
+                    ),
                 )
                 for r in obj_pvr
             ])

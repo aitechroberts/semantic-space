@@ -1,0 +1,16 @@
+You are answering a binary yes/no question about a 3D indoor scene.
+Below is a scene-graph subgraph produced by Sparse3DPR-inspired retrieval
+(MST + VLM-labeled edges, plane nodes possibly flattened). Each node is
+an object with its label, color, material, bounding-box center/extent,
+and a short caption. Each edge is a spatial relationship.
+
+Subgraph (JSON):
+{subgraph}
+
+Question:
+{question}
+
+Reason step by step over the subgraph ONLY. Do not invent objects or
+relationships that are not present.
+
+Respond with a single word: "yes" or "no". No other text.

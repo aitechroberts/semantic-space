@@ -202,6 +202,64 @@ To adjust the vLLM server's GPU memory share:
 GPU_MEM_UTIL=0.5 ./shells/run_vllm_batch.sh  # 50% = ~8GB for the model
 ```
 
+## Request Shape & vLLM Flags
+
+### Current design: one image per request
+
+The captioning pipeline is deliberately **single-image-per-request** at every call site. Both the client and the stage that calls it enforce this:
+
+- `semgraph/utils/vlms/vlm_api.py::VLMAPIClient.generate()` takes a single `Image.Image` (not a list) and emits exactly one `{"type": "image_url", ...}` content object per message.
+- `semgraph/stages/caption.py::_caption_object()` iterates the object's top-K views in a plain Python for-loop, issuing three sequential single-image requests per view (caption / color / material), followed by one text-only consolidation call.
+
+For `top_k=5` that's `5 × 3 = 15` single-image HTTP calls + 1 text-only call per object. Per-scene object counts times 15–30 requests each is what the sweep is doing.
+
+### Consequence: `--limit-mm-per-prompt image=1` is sufficient
+
+vLLM's default of **one image per prompt** is exactly what this design needs. Do **not** pass `--limit-mm-per-prompt image=N` in `vllm_lifecycle.sh::vllm_up()` unless the request shape changes (see below). Setting it to 1 explicitly is a no-op; setting it higher reserves additional multimodal cache slots that will never be used.
+
+The relevant `vllm serve` flags we actually need for this workload are minimal:
+
+```bash
+vllm serve "$model" \
+    --port "$VLLM_PORT" \
+    --gpu-memory-utilization "$gpu_mem" \
+    --max-model-len "$max_model_len" \
+    --trust-remote-code \
+    --dtype auto \
+    --generation-config vllm    # pin server-side defaults; client sampling params still win per-request
+```
+
+### Future optimization: K views in one request
+
+If the caption stage is refactored to pass **K views of one object in a single chat turn** (e.g., "here are 5 views of the same object, give me one consolidated caption"), the request shape and the vLLM server both need to change in lockstep.
+
+**Why you'd consider this refactor**
+
+- **Cost**: drops from `15 × n_objects` requests to `1 × n_objects` per scene — an order-of-magnitude fewer round-trips and prefill passes.
+- **Quality**: lets the VLM cross-reference occlusions and lighting across views instead of triangulating from three independent single-view answers. Consolidation becomes implicit rather than a separate LLM call over text captions.
+- **Determinism**: removes the `_most_common(colors)` / `_most_common(materials)` majority-vote step, which is lossy when views genuinely disagree.
+
+**What needs to change**
+
+1. **`VLMAPIClient.generate()`**: accept `images: list[Image.Image]` instead of `image: Image.Image`; emit one `{"type": "image_url", ...}` content object per image, in order, before the text prompt.
+2. **`_caption_object()`**: collapse the per-view loop into a single call that sends all K crops plus a multi-view prompt; drop the separate color/material calls (fold them into the consolidation prompt or a structured-output JSON response).
+3. **Prompt templates** (`prompts_standard`, `prompts_compact`): add a multi-view variant (e.g., `caption_multiview`) that explicitly tells the model "these N images are the same object from different viewpoints."
+4. **`vllm_lifecycle.sh::vllm_up()`**: add `--limit-mm-per-prompt image=K` where K is the max `top_k` you'll ever send. Undersizing this causes silent HTTP 400s on every request. Oversizing it wastes KV cache. Match it to the `CAPTION_TOP_K` env var (default 5) or a hard ceiling like 10.
+5. **Per-model VRAM budgets** in `run_vlm_captioning_sweep.sh`: K images at ~256 tokens each (Qwen3-VL/InternVL3 ViT tile rate) means the effective prompt length scales roughly linearly in K. You may need to bump `max_model_len` or lower `gpu_mem_util` on larger VLMs. The `VLMS` array's third field (`mml`) is where that's tuned per-model.
+6. **Chat template compatibility**: not all VLM chat templates support multiple interleaved image tokens in the same user turn. Qwen3-VL, InternVL3, Gemma 3, LLaVA-OneVision, and Ovis2.5 all do. SmolVLM2 and IDEFICS3 do. CogVLM is finicky about image count and may need a different template. Test with a one-scene smoke before rolling out.
+7. **Failure modes**: if a crop fails to load, the single-image path just skips that view and proceeds with K-1. The multi-image path has to decide: skip and send K-1, or fail the whole object. Pick and document a policy.
+
+**What does NOT need to change**
+
+- The vLLM server lifecycle (`vllm_up` / `vllm_down` / health polling).
+- The encoder sweep (separate pipeline, no VLM involvement).
+- Oracle scene / per_view_records format (already carries `crop_path` per view).
+- The scene graph assembler downstream.
+
+**When to revisit**
+
+Run this as-is through the current `run_all.sh` sweep first. The single-image fan-out is slower but simpler, and the three-call (caption/color/material) decomposition makes failure diagnostics easier (you can see which attribute the model bombed on). Only refactor to multi-image-per-request after the sweep has baseline numbers, so you can measure the cost/quality delta honestly.
+
 ## How to Add a New Model
 
 1. Find the model's HuggingFace ID (e.g., `NewOrg/NewVLM-2B-Instruct`)

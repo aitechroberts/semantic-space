@@ -267,11 +267,15 @@ def main_standalone(cfg):
         obj_pv_meta = []
         obj_pv_feats = []
         for r in pvr_raw:
+            gt_iid = r.get("gt_instance_id")
+            n_vis = r.get("n_visible")
             obj_pv_meta.append(_PerViewMeta(
                 frame_idx=int(r.get("frame_idx", 0)),
                 n_points=int(r.get("n_points", 0)),
                 crop_path=r.get("crop_path", ""),
                 crop_bbox=r.get("crop_bbox", []),
+                gt_instance_id=int(gt_iid) if gt_iid is not None else None,
+                n_visible=int(n_vis) if n_vis is not None else None,
             ))
             ft = r.get("clip_ft")
             if ft is not None:

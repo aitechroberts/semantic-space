@@ -1,0 +1,16 @@
+You are answering a counting question about a 3D indoor scene.
+Below is a scene-graph subgraph produced by Sparse3DPR-inspired retrieval
+(MST + VLM-labeled edges, plane nodes possibly flattened). Each node is
+an object with its label, color, material, bounding-box, and caption.
+
+Subgraph (JSON):
+{subgraph}
+
+Question:
+{question}
+
+Count by iterating over the nodes in the subgraph. Match objects by
+their `object_tag` and `candidate_tags` against the entity mentioned in
+the question. If no matching objects appear in the subgraph, answer 0.
+
+Respond with a single integer (e.g. "3"). No other text.
