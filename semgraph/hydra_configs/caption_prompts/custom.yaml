@@ -1,0 +1,11 @@
+# Custom prompt bundle pointer. Python owns the three-tier path
+# resolution (CLI caption_prompts.prompts_path=... > env
+# CAPTION_PROMPTS_FILE > pkg://package/resource). No `prompts_path`
+# lives here on purpose — a `???` mandatory sentinel or
+# `${oc.env:...,???}` pattern would be a footgun (the literal string
+# "???" propagates into Python and confuses the resolution).
+#
+# trust_path is read via semgraph.prompting._cfg._truthy (case-folded
+# whitelist: {1,true,yes,on}); everything else is default-deny.
+bundle_id: custom
+trust_path: ${oc.env:CAPTION_PROMPTS_TRUST,0}

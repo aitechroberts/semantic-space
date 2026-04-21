@@ -9,11 +9,17 @@ For each object: sorts views by n_points descending, takes top K, sends 1.5x
 crop images to VLM with three prompts (caption, color, material), runs LLM
 consolidation to produce canonical_tag, candidate_tags, summary.
 
+The prompt strings come from the ``caption_prompts`` Hydra config group
+(see :mod:`semgraph.prompting` — source of truth is
+``semgraph/prompting/data/<bundle_id>.yaml``). ``cfg.caption.top_k`` is the
+stage-level view budget; the bundle may advertise a ``suggested_top_k``
+hint, but the stage config is authoritative.
+
 Saves as variant keyed by VLM name.
 
 Standalone usage::
 
-    python -m semgraph.stages.caption <hydra overrides> caption.vlm_name=...
+    python -m semgraph.stages.caption <hydra overrides> caption.vlm_name=... caption_prompts=rich
 """
 
 from __future__ import annotations
@@ -24,6 +30,8 @@ from typing import Any
 
 from PIL import Image
 
+from semgraph.prompting import PromptBundle, get_prompt_bundle
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +40,16 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def init_vlm_client(cfg: Any) -> Any | None:
-    """Initialize VLM API client."""
+    """Initialize VLM API client.
+
+    NOTE: ``prompts=cfg.prompts_standard`` is constructor noise on this
+    code path — per-call prompts come from the :class:`PromptBundle`
+    resolved by :func:`_resolve_bundle` below. The arg is preserved only
+    because :class:`VLMAPIClient` also powers the legacy batch pipeline in
+    ``semgraph/slam/vlm_run/``, which *does* consume it. Do not delete
+    ``cfg.prompts_standard`` from the batch config without updating that
+    pipeline.
+    """
     from semgraph.utils.vlms.vlm_api import VLMAPIClient, wait_for_server
 
     caption_cfg = cfg.get("caption", {}) if hasattr(cfg, "get") else {}
@@ -54,70 +71,57 @@ def init_vlm_client(cfg: Any) -> Any | None:
 
 
 # ---------------------------------------------------------------------------
-# Per-object captioning
+# Prompt bundle resolution
 # ---------------------------------------------------------------------------
 
-DEFAULT_CAPTION_PROMPT = "Describe this object in one sentence. What is it?"
-DEFAULT_COLOR_PROMPT = "What is the primary color of this object? Answer with one or two words."
-DEFAULT_MATERIAL_PROMPT = "What material is this object made of? Answer with one or two words."
 
-DEFAULT_CONSOLIDATION_PROMPT = """You are given multiple captions describing the same object from different viewpoints.
-Produce:
-1. "canonical_tag": a single noun phrase identifying the object (e.g. "office chair", "wooden desk")
-2. "candidate_tags": 3-5 alternative noun phrases that could also describe this object
-3. "summary": a one-sentence description combining all observations
+def _resolve_bundle(cfg: Any) -> PromptBundle:
+    """Resolve the active :class:`PromptBundle` from a composed Hydra cfg.
 
-Captions:
-{captions}
+    Reads ``cfg.caption_prompts.bundle_id`` (defaulting to ``"standard"``
+    when the caption_prompts group is absent) and forwards the subnode to
+    the factory so any per-field override in a user overlay is honored.
 
-Respond in JSON format:
-{{"canonical_tag": "...", "candidate_tags": ["...", ...], "summary": "..."}}"""
-
-# Back-compat aliases for callers that imported the old constant names.
-CAPTION_PROMPT = DEFAULT_CAPTION_PROMPT
-COLOR_PROMPT = DEFAULT_COLOR_PROMPT
-MATERIAL_PROMPT = DEFAULT_MATERIAL_PROMPT
-CONSOLIDATION_PROMPT = DEFAULT_CONSOLIDATION_PROMPT
-
-
-def _resolve_prompts(cfg: Any) -> dict[str, str]:
-    """Return the active prompt bundle, honoring an optional override bundle.
-
-    Order of precedence (highest first):
-      1. ``cfg.caption.prompts.{caption,color,material,consolidation}``
-         (e.g. populated by +caption@caption=prompts_rich).
-      2. Module-level defaults.
-
-    This lets us sweep prompt variants without monkey-patching constants.
+    Also emits a one-shot deprecation warning when a user overlay still
+    sets ``cfg.caption.prompts`` / legacy ``cfg.caption.top_k`` content
+    while the new ``caption_prompts`` group is at default (C8).
     """
-    prompts = {
-        "caption": DEFAULT_CAPTION_PROMPT,
-        "color": DEFAULT_COLOR_PROMPT,
-        "material": DEFAULT_MATERIAL_PROMPT,
-        "consolidation": DEFAULT_CONSOLIDATION_PROMPT,
-    }
-    caption_cfg = cfg.get("caption", {}) if hasattr(cfg, "get") else {}
-    override = caption_cfg.get("prompts") if isinstance(caption_cfg, dict) or hasattr(caption_cfg, "get") else None
-    if override:
-        for key in prompts:
-            val = override.get(key) if hasattr(override, "get") else None
-            if val:
-                prompts[key] = str(val)
-    return prompts
+    caption_prompts_cfg = cfg.get("caption_prompts") if hasattr(cfg, "get") else None
+    caption_cfg = cfg.get("caption") if hasattr(cfg, "get") else None
 
+    legacy_prompts = None
+    if caption_cfg is not None and hasattr(caption_cfg, "get"):
+        legacy_prompts = caption_cfg.get("prompts")
+
+    bundle_id = "standard"
+    if caption_prompts_cfg is not None and hasattr(caption_prompts_cfg, "get"):
+        bundle_id = caption_prompts_cfg.get("bundle_id") or "standard"
+
+    if legacy_prompts and bundle_id in ("standard", "default"):
+        logger.warning(
+            "[caption] legacy cfg.caption.prompts detected; migrate to "
+            "'caption_prompts=<bundle_id>' override (see "
+            "semgraph/hydra_configs/caption_prompts/README.md)"
+        )
+
+    return get_prompt_bundle(bundle_id, caption_prompts_cfg)
+
+
+# ---------------------------------------------------------------------------
+# Per-object captioning
+# ---------------------------------------------------------------------------
 
 def _caption_object(
     per_view_records: list[dict],
     vlm_client: Any,
+    bundle: PromptBundle,
     top_k: int = 10,
-    prompts: dict[str, str] | None = None,
 ) -> dict:
     """Caption a single object from its top-K views. Returns caption dict."""
-    p = prompts or {}
-    caption_prompt = p.get("caption", DEFAULT_CAPTION_PROMPT)
-    color_prompt = p.get("color", DEFAULT_COLOR_PROMPT)
-    material_prompt = p.get("material", DEFAULT_MATERIAL_PROMPT)
-    consolidation_prompt = p.get("consolidation", DEFAULT_CONSOLIDATION_PROMPT)
+    caption_prompt = bundle.caption
+    color_prompt = bundle.color
+    material_prompt = bundle.material
+    consolidation_prompt = bundle.consolidation
 
     sorted_views = sorted(per_view_records, key=lambda r: r.get("n_points", 0), reverse=True)
     selected = sorted_views[:top_k]
@@ -157,7 +161,6 @@ def _caption_object(
         except Exception:
             pass
 
-    # Consolidation
     result = {
         "canonical_tag": "unknown",
         "candidate_tags": [],
@@ -168,7 +171,9 @@ def _caption_object(
     }
 
     if captions and vlm_client is not None:
-        consolidation_input = consolidation_prompt.format(captions="\n".join(f"- {c}" for c in captions))
+        consolidation_input = consolidation_prompt.format(
+            captions="\n".join(f"- {c}" for c in captions)
+        )
         try:
             resp = vlm_client.generate(prompt=consolidation_input)
             if resp:
@@ -231,12 +236,19 @@ def main_standalone(cfg):
     n_objects = len(oracle.class_names)
     caption_cfg = cfg.get("caption", {}) if hasattr(cfg, "get") else {}
     vlm_name = caption_cfg.get("vlm_name") or cfg.get("vlm_model_name", "Qwen/Qwen3-VL-2B-Instruct")
-    top_k = caption_cfg.get("top_k", 10) if isinstance(caption_cfg, dict) else 10
+    top_k = caption_cfg.get("top_k", 10) if hasattr(caption_cfg, "get") else 10
 
-    prompts = _resolve_prompts(cfg)
+    bundle = _resolve_bundle(cfg)
+    logger.info(
+        "[caption] bundle=%s (sha256=%s) top_k=%d",
+        bundle.bundle_id,
+        bundle.content_sha256[:16],
+        top_k,
+    )
     print(
-        f"[caption] Phase B: vlm={vlm_name}, top_k={top_k}, {n_objects} objects, "
-        f"prompt_bundle={'rich' if prompts['caption'] != DEFAULT_CAPTION_PROMPT else 'default'}"
+        f"[caption] Phase B: vlm={vlm_name}, top_k={top_k}, "
+        f"{n_objects} objects, bundle={bundle.bundle_id} "
+        f"(sha256={bundle.content_sha256[:16]})"
     )
 
     vlm_client = init_vlm_client(cfg)
@@ -251,7 +263,7 @@ def main_standalone(cfg):
             {"crop_path": pm.crop_path, "n_points": pm.n_points}
             for pm in pv_meta
         ]
-        result = _caption_object(pvr_dicts, vlm_client, top_k=top_k, prompts=prompts)
+        result = _caption_object(pvr_dicts, vlm_client, bundle=bundle, top_k=top_k)
         captions_data[obj_idx] = result
 
     safe_vlm = vlm_name.replace("/", "_")

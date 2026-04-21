@@ -252,8 +252,9 @@ At the end, any `FAILED_CELLS` are listed and the script exits non-zero.
 
 1. Bring vLLM server up (once per VLM).
 2. For each scene:
-   a. Run `semgraph.stages.caption` with `top_k=5` and the
-      `prompts_rich` bundle (2-3 sentence object prompts).
+   a. Run `semgraph.stages.caption` with `top_k=5` and the `rich`
+      prompt bundle (2-3 sentence object prompts; see
+      `docs/VLLM_API.md` § Prompt Bundles).
    b. Immediately run `assemble_scene_graph.py`, producing a
       **VLM-only** scene graph (no encoder dependency).
 3. Tear vLLM down, optionally purge HF cache, next VLM.
@@ -262,13 +263,24 @@ The scene graph file contains: `scene_type` (VLM-inferred), `objects`
 (geometry from oracle + caption / tag / color / material from VLM),
 `planes` (HPSG), and `edges` (MST + VLM-labeled spatial relations).
 
-**Configurable VLMs** (edit `VLMS` in `run_vlm_captioning_sweep.sh`):
+**Configurable VLMs** (edit `VLMS` in `run_vlm_captioning_sweep.sh`; format `"hf_id|gpu_mem_util|max_model_len"`):
 
+- `Qwen/Qwen3.5-2B` (gpu=0.75, mml=3072)
+- `Qwen/Qwen3.5-0.8B` (gpu=0.75, mml=3072)
 - `Qwen/Qwen3-VL-2B-Instruct` (gpu=0.75, mml=3072)
-- `OpenGVLab/InternVL3-2B` (gpu=0.75, mml=4096)
+- `OpenGVLab/InternVL3_5-2B` (gpu=0.75, mml=3072)
+- `OpenGVLab/InternVL3_5-1B` (gpu=0.75, mml=3072)
+- `OpenGVLab/InternVL3-1B` (gpu=0.75, mml=3072)
 - `google/gemma-3-4b-it` (gpu=0.55, mml=2048) — note the tighter VRAM.
-- `AIDC-AI/Ovis2.5-2B` (gpu=0.70, mml=3072) — dry-run the first cell if
+- `AIDC-AI/Ovis2.5-2B` (gpu=0.70, mml=3072)
+- `AIDC-AI/Ovis2-1B` (gpu=0.70, mml=3072) — dry-run the first cell if
   Ovis has issues on your vLLM version.
+
+`OpenGVLab/InternVL3_5-1B-Flash` is explicitly commented out in the
+`VLMS` array: its engine-core init hangs on vLLM 0.19, and an
+unqualified startup failure poisons the sweep's exit status for every
+downstream VLM. Re-enable only after confirming a vLLM upgrade lands
+that fixes it.
 
 **Preflight**
 
@@ -282,8 +294,18 @@ The scene graph file contains: `scene_type` (VLM-inferred), `objects`
 ```bash
 bash generate_groundtruth/run_vlm_captioning_sweep.sh
 
-# swap back to the old short prompts
-PROMPT_BUNDLE=prompts_standard \
+# swap to the baseline (short) prompts
+PROMPT_BUNDLE=standard \
+  bash generate_groundtruth/run_vlm_captioning_sweep.sh
+
+# use the short-caption bundle for small/fast VLMs
+PROMPT_BUNDLE=compact \
+  bash generate_groundtruth/run_vlm_captioning_sweep.sh
+
+# load a user-supplied prompt pack (must live inside the repo
+# or CAPTION_PROMPTS_TRUST=1 must be set; see docs/VLLM_API.md)
+PROMPT_BUNDLE=custom \
+CAPTION_PROMPTS_FILE=/abs/path/to/my_prompts.yaml \
   bash generate_groundtruth/run_vlm_captioning_sweep.sh
 
 # purge cache between VLMs
@@ -292,6 +314,8 @@ PURGE_HF_CACHE=1 bash generate_groundtruth/run_vlm_captioning_sweep.sh
 # dry run just the plan
 DRY_RUN=1 bash generate_groundtruth/run_vlm_captioning_sweep.sh
 ```
+
+`PROMPT_BUNDLE` values: `standard` (default baseline), `rich` (sweep default; longer prompts), `compact` (short prompts for small VLMs), `custom` (user YAML via CLI/env/`pkg://`). See `docs/VLLM_API.md` § Prompt Bundles for bundle content, custom-bundle resolution order, and the six guardrails applied to custom YAMLs.
 
 **Saved artifacts (per (VLM, scene) cell)**
 

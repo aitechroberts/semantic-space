@@ -1,0 +1,4 @@
+# Rich prompt bundle — longer, more specific prompts for capable VLMs.
+# Content lives in semgraph/prompting/data/rich.yaml.
+bundle_id: rich
+schema_version: 1

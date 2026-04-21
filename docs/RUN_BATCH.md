@@ -1,6 +1,24 @@
 # Running the Batch Pipeline
 
-> **Last updated:** 2026-04-10
+> **Last updated:** 2026-04-20
+>
+> **Scope.** This document covers `shells/run_vllm_batch.sh`, the legacy
+> all-in-one entry point (plus the `PIPELINE_MODE=staged` wrapper that
+> delegates to `run_staged_pipeline.sh`). The **per-object captioning
+> sweep** used for Phase B — `generate_groundtruth/run_vlm_captioning_sweep.sh`
+> — is documented in [PHASE_B_RUNBOOK.md § S4](PHASE_B_RUNBOOK.md#s4--vlm-captioning--scene-graph).
+> The two paths differ materially in how prompts are supplied:
+>
+> - **Here (`run_vllm_batch.sh`):** `PROMPT_CONFIG` env var selects a flat
+>   `prompts_standard.yaml` / `prompts_compact.yaml` whose shape matches
+>   the `VLMAPIClient(prompts=...)` ctor arg (keys: `caption`,
+>   `captions_with_labels`, `relation`, `relations_with_labels`,
+>   `consolidate`, `consolidate_prompt`).
+> - **Phase B sweep (`run_vlm_captioning_sweep.sh`):** `PROMPT_BUNDLE` env
+>   var selects a `PromptBundle` via the `caption_prompts` Hydra config
+>   group. Different schema (`caption`, `color`, `material`,
+>   `consolidation`), content-hash-logged, six-guardrail custom bundles.
+>   See [VLLM_API.md § Prompt Bundles](VLLM_API.md#prompt-bundles-per-object-captioning).
 
 ## Prerequisites
 
@@ -210,7 +228,7 @@ All artifacts live under `{dataset_root}/{scene_id}/stages/`:
 
 ## Model Reference
 
-See [VLLM_API.md](VLLM_API.md) for the full model support matrix, VRAM budgets, and prompt config recommendations.
+See [VLLM_API.md](VLLM_API.md) for the full model support matrix, VRAM budgets, and prompt config recommendations. The `Prompt Config` column below refers to the **legacy** `PROMPT_CONFIG` env var (this entry point). For the Phase B captioning sweep's equivalent `PROMPT_BUNDLE` values, see [VLLM_API.md § Prompt Bundles](VLLM_API.md#prompt-bundles-per-object-captioning).
 
 | Model | Env Var Override | Prompt Config |
 |-------|-----------------|---------------|

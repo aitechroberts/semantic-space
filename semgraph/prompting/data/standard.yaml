@@ -1,0 +1,27 @@
+# Standard prompt bundle — baseline prompts for capable VLMs.
+#
+# Source of truth for the `standard` bundle. Loaded via importlib.resources
+# by semgraph.prompting.standard:StandardPromptBundle. The Hydra pointer at
+# semgraph/hydra_configs/caption_prompts/standard.yaml references this
+# bundle by id; content lives here so companies/researchers can diff it as
+# a single asset.
+schema_version: 1
+
+caption: "Describe this object in one sentence. What is it?"
+
+color: "What is the primary color of this object? Answer with one or two words."
+
+material: "What material is this object made of? Answer with one or two words."
+
+consolidation: |-
+  You are given multiple captions describing the same object from different viewpoints.
+  Produce:
+  1. "canonical_tag": a single noun phrase identifying the object (e.g. "office chair", "wooden desk")
+  2. "candidate_tags": 3-5 alternative noun phrases that could also describe this object
+  3. "summary": a one-sentence description combining all observations
+
+  Captions:
+  {captions}
+
+  Respond in JSON format:
+  {{"canonical_tag": "...", "candidate_tags": ["...", ...], "summary": "..."}}

@@ -1,0 +1,34 @@
+# Rich prompt bundle — longer, more specific prompts for capable VLMs.
+#
+# Migrated from the legacy semgraph/hydra_configs/prompts_rich.yaml `caption:`
+# block. Suggests top_k=5 per-object views as a bundle-author hint; the stage
+# remains authoritative about the actual top_k used (see docs/VLLM_API.md).
+schema_version: 1
+suggested_top_k: 5
+
+caption: |-
+  Describe this object in 2-3 sentences. Include: what it is (be specific —
+  e.g. "leather office chair" not just "chair"); its physical attributes
+  (approximate size relative to the room, condition); distinguishing
+  features that differentiate it from similar objects; and any visible
+  affordances. Do not describe the surroundings.
+
+color: "What is the primary color of this object? Answer with one or two words."
+
+material: "What material is this object made of? Answer with one or two words."
+
+consolidation: |-
+  You are given multiple captions describing the same object from different
+  viewpoints.
+  Produce:
+  1. "canonical_tag": a specific noun phrase (e.g. "leather office chair",
+     "wooden desk with metal legs"), not a single generic word.
+  2. "candidate_tags": 3-5 alternative noun phrases.
+  3. "summary": a 2-3 sentence description synthesizing all observations,
+     including physical attributes and distinguishing features.
+
+  Captions:
+  {captions}
+
+  Respond in JSON format:
+  {{"canonical_tag": "...", "candidate_tags": ["...", ...], "summary": "..."}}

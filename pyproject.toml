@@ -57,9 +57,24 @@ members = [
 ]
 
 [tool.setuptools]
-# if you have package data, we can add [tool.setuptools.package-data] later
 
 # Tell setuptools to *find only* the semgraph package, and ignore others like "assets"
 [tool.setuptools.packages.find]
 include = ["semgraph*"]
 exclude = ["tests*", "assets*", "docs*", "scripts*"]
+
+# Ship packaged prompt-bundle YAMLs inside wheels. Without this block,
+# `pip install semantic-space` (or any non-editable install) would load
+# the package and then FileNotFoundError on the first get_prompt_bundle()
+# call because setuptools' default behavior excludes non-.py files.
+[tool.setuptools.package-data]
+"semgraph.prompting" = ["data/*.yaml"]
+
+# Register internal prompt bundles through the same entry-point mechanism
+# third parties use. Dogfoods the discovery path (structural shadow-check
+# in semgraph.prompting._discover_plugins enforces internal-name precedence
+# regardless of iteration order).
+[project.entry-points."semgraph.prompt_bundles"]
+standard = "semgraph.prompting.standard:StandardPromptBundle"
+rich = "semgraph.prompting.rich:RichPromptBundle"
+compact = "semgraph.prompting.compact:CompactPromptBundle"

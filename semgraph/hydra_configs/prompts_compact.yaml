@@ -1,4 +1,12 @@
 # prompts_compact.yaml
+#
+# LEGACY-PIPELINE-ONLY. This file is consumed by
+# semgraph/utils/vlms/vlm_api.py::VLMAPIClient.__init__(prompts=...) and by
+# the legacy batch captioning in semgraph/slam/vlm_run/. The per-object
+# captioning stage in semgraph/stages/caption.py uses the new
+# semgraph/prompting/compact bundle instead (via `caption_prompts=compact`).
+# Do not delete these keys without updating the legacy callers.
+#
 # Simplified prompts for smaller VLMs with limited instruction-following capacity.
 # Works with: SmolVLM-256M/500M, SmolVLM2 2B, IDEFICS2/3, Ovis1.6/2/2.5, OmniVLM
 # Uses shorter templates and simpler output format expectations.

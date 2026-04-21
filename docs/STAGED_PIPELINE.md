@@ -1,6 +1,6 @@
 # Staged Pipeline Reference
 
-> **Last updated:** 2026-04-10
+> **Last updated:** 2026-04-20
 >
 > This document describes the two-phase staged pipeline: what each stage
 > does, what data it produces and consumes, the serialization format, and
@@ -191,13 +191,25 @@ Phase B runs N times per scene — once per encoder/VLM combination being evalua
 
 **What it does:**
 1. Loads the oracle scene's `per_view_meta` (crop paths and n_points). Does NOT load point clouds or any geometry.
-2. For each object: sorts views by `n_points` descending, takes top K, sends 1.5x crop images to VLM with three prompts (caption, color, material).
-3. Runs LLM consolidation to produce `canonical_tag`, `candidate_tags`, `summary`.
-4. Saves as a `CaptionsRecord`.
+2. Resolves the active `PromptBundle` (`caption`, `color`, `material`, `consolidation` templates) via `semgraph.prompting.get_prompt_bundle(cfg.caption_prompts.bundle_id, cfg.caption_prompts)` and logs its content SHA-256 at INFO level.
+3. For each object: sorts views by `n_points` descending, takes top K (`cfg.caption.top_k`, authoritative; the bundle's `suggested_top_k` is only a hint), sends 1.5x crop images to the VLM with the bundle's three per-view prompts.
+4. Runs LLM consolidation using `bundle.consolidation.format(captions=...)` to produce `canonical_tag`, `candidate_tags`, `summary`.
+5. Saves as a `CaptionsRecord`.
+
+**Prompt bundle selection:** Override at the CLI with `caption_prompts=<bundle_id>` (default `standard`). Built-in bundles: `standard`, `rich`, `compact`, `custom`. Custom bundles load a user YAML with six guardrails. See [VLLM_API.md § Prompt Bundles](VLLM_API.md#prompt-bundles-per-object-captioning) for the full catalog, migration notes, custom-bundle resolution order, and third-party entry-point registration.
 
 **VLM dependency:** Requires a running vLLM server at `vlm_api_url`. Configurable via `caption.vlm_name`.
 
 **Outputs:** `captions/{vlm_slug}/captions.npz+.json`
+
+**Run-header line (stdout + INFO log):**
+
+```
+[caption] bundle=<id> (sha256=<16hex>) top_k=<k>
+[caption] Phase B: vlm=..., top_k=..., N objects, bundle=<id> (sha256=<16hex>)
+```
+
+The SHA-256 covers every prompt string plus `suggested_top_k`, so two captions runs with identical VLM settings but a mutated prompt yield distinct hashes. This lets downstream consumers answer "which bundle produced this caption file" from a single grep.
 
 ---
 

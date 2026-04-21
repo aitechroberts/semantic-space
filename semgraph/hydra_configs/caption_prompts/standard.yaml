@@ -1,0 +1,5 @@
+# Standard prompt bundle — baseline prompts for capable VLMs.
+# Content lives in semgraph/prompting/data/standard.yaml; this file is
+# only a pointer that the factory resolves via entry-point discovery.
+bundle_id: standard
+schema_version: 1

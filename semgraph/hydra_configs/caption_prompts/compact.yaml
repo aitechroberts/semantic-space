@@ -1,0 +1,4 @@
+# Compact prompt bundle — short prompts for small/fast VLMs.
+# Content lives in semgraph/prompting/data/compact.yaml.
+bundle_id: compact
+schema_version: 1

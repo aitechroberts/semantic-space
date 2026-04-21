@@ -1,0 +1,4 @@
+# Default pointer — resolves to the `standard` bundle via Hydra's
+# defaults-include so the two files cannot drift.
+defaults:
+  - standard

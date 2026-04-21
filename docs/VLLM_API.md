@@ -54,17 +54,39 @@ neuro-nav/
 │   │   ├── vlm_api.py          # Universal API client (VLMAPIClient)
 │   │   └── vlm_encoder.py      # Vision encoder extractor (VLMEncoderExtractor)
 │   ├── slam/vlm_run/
-│   │   └── batch_vlm_mapping_api.py  # Main batch processing script
+│   │   └── batch_vlm_mapping_api.py  # Legacy all-in-one batch script (consumes prompts_standard/compact)
+│   ├── stages/
+│   │   └── caption.py          # Staged Phase B captioning (consumes PromptBundle)
+│   ├── prompting/              # Per-object prompt bundles (see § Prompt Bundles below)
+│   │   ├── __init__.py         # get_prompt_bundle() factory, entry-point discovery
+│   │   ├── base.py             # PromptBundle ABC (validate_raw, schema dispatch, content_sha256)
+│   │   ├── _cfg.py             # _select (struct-mode-safe), _truthy (case-folded whitelist)
+│   │   ├── standard.py, rich.py, compact.py, custom.py
+│   │   ├── __main__.py         # python -m semgraph.prompting {list,show,validate}
+│   │   └── data/               # Packaged content YAMLs (importlib.resources; source of truth)
+│   │       ├── standard.yaml
+│   │       ├── rich.yaml
+│   │       └── compact.yaml
 │   └── hydra_configs/
-│       ├── batch/
-│       │   └── batch_vlm_mapping_api.yaml  # Hydra config
-│       └── prompts/
-│           ├── prompts_standard.yaml   # For capable VLMs (Qwen, InternVL, Gemma 3, etc.)
-│           └── prompts_compact.yaml    # For smaller VLMs (SmolVLM, IDEFICS, Ovis, etc.)
+│       ├── batch_vlm_mapping_api.yaml  # Top-level Hydra config (staged + legacy entry)
+│       ├── prompts_standard.yaml       # Legacy-pipeline-only (VLMAPIClient ctor arg schema)
+│       ├── prompts_compact.yaml        # Legacy-pipeline-only (ditto)
+│       └── caption_prompts/            # Hydra config group for per-object captioning
+│           ├── default.yaml            # Include → standard (DRY via defaults-include)
+│           ├── standard.yaml, rich.yaml, compact.yaml   # 2-line pointers (bundle_id + schema_version)
+│           ├── custom.yaml             # Python-owned path resolution; no prompts_path in YAML
+│           └── README.md               # Migration block + custom-bundle usage
 ├── shells/
-│   └── run_vllm_batch.sh       # vLLM serve lifecycle + scene loop
-└── VLLM_API.md                 # This file
+│   └── run_vllm_batch.sh       # vLLM serve lifecycle + scene loop (legacy all-in-one)
+├── generate_groundtruth/
+│   └── run_vlm_captioning_sweep.sh  # Phase B staged sweep (consumes caption_prompts=rich by default)
+└── docs/VLLM_API.md            # This file
 ```
+
+Two captioning entry points coexist:
+
+- **Legacy all-in-one** (`semgraph/slam/vlm_run/batch_vlm_mapping_api.py` via `shells/run_vllm_batch.sh`) consumes the flat `prompts_standard.yaml` / `prompts_compact.yaml` schema through `VLMAPIClient.__init__(prompts=...)`. `PROMPT_CONFIG` env var selects the flat file.
+- **Staged per-object** (`semgraph/stages/caption.py` via `generate_groundtruth/run_vlm_captioning_sweep.sh`) consumes a `PromptBundle` resolved from the `caption_prompts` Hydra group. `PROMPT_BUNDLE` env var selects the bundle. This is what Phase B uses; see § Prompt Bundles below.
 
 ## Quick Start
 
@@ -150,6 +172,109 @@ Simplified prompts for smaller models. Shorter templates, one-sentence captions,
 **Best for**: SmolVLM (all sizes), IDEFICS2/3, Ovis (all versions), OmniVLM
 
 Both configs share the same keys (`caption`, `captions_with_labels`, `relation`, `relations_with_labels`, `consolidate`, `consolidate_prompt`), so they're interchangeable via the `PROMPT_CONFIG` environment variable.
+
+> **Note**: `prompts_standard.yaml` / `prompts_compact.yaml` are **legacy-pipeline-only**. They drive the batch captioning in `semgraph/slam/vlm_run/` via `VLMAPIClient.__init__(prompts=...)`. The per-object captioning stage (`semgraph/stages/caption.py`, which is what the Phase B sweep invokes) now uses the **Prompt Bundles** system described below.
+
+## Prompt Bundles (per-object captioning)
+
+The per-object captioning stage selects a `PromptBundle` via the `caption_prompts` Hydra config group. Bundles are strategy+factory objects that ship packaged prompt YAMLs as the source of truth; the Hydra YAML at `semgraph/hydra_configs/caption_prompts/<bundle_id>.yaml` is a 2-line pointer that the factory resolves through entry-point discovery (the same mechanism third-party plugins use).
+
+### Bundle catalog
+
+| `bundle_id` | Content summary                                           | `suggested_top_k` | Best for                   |
+| ----------- | --------------------------------------------------------- | ----------------- | -------------------------- |
+| `standard`  | One-sentence caption + color/material + JSON consolid.    | –                 | Default; any capable VLM   |
+| `rich`      | 2-3 sentence caption + specific-phrase canonical tag      | 5                 | 2B+ VLMs, research sweeps  |
+| `compact`   | Short-noun-phrase caption + one-word color/material       | 3                 | Sub-2B / latency-sensitive |
+| `custom`    | User-supplied YAML (six guardrails enforced)              | bundle-defined    | Anyone vendoring prompts   |
+| `default`   | Alias for `standard` (used by the Hydra default pointer)  | –                 | Default slot in Hydra composition |
+
+### Selecting a bundle
+
+Override at the command line:
+
+```bash
+python -m semgraph.stages.caption scene_id=room0 \
+    caption_prompts=rich
+```
+
+Or in a user config overlay:
+
+```yaml
+defaults:
+  - batch_vlm_mapping_api
+  - override caption_prompts: compact
+```
+
+`suggested_top_k` is a **hint**, not a binding. The authoritative view budget is `cfg.caption.top_k` in the stage config. Bundle authors declare a hint; ops/research teams can override with `caption.top_k=7` orthogonally to the bundle choice — no need to fork a bundle YAML to sweep `top_k`.
+
+### Custom bundles
+
+Three ways to point `caption_prompts=custom` at a user YAML, in order of precedence:
+
+```bash
+# 1. CLI (canonical for interactive use)
+python -m semgraph.stages.caption ... \
+    caption_prompts=custom \
+    caption_prompts.prompts_path=/abs/path/to/my_prompts.yaml
+
+# 2. Env var (canonical for sweep scripts)
+export CAPTION_PROMPTS_FILE=/abs/path/to/my_prompts.yaml
+python -m semgraph.stages.caption ... caption_prompts=custom
+
+# 3. pkg:// URI for installed third-party prompt packs
+python -m semgraph.stages.caption ... \
+    caption_prompts=custom \
+    caption_prompts.prompts_path=pkg://acme_prompts/kitchen.yaml
+```
+
+Filesystem paths must live under the repo root **or** the trust flag must evaluate truthy (`CAPTION_PROMPTS_TRUST=1` / `caption_prompts.trust_path=1`). The trust flag is parsed via a case-folded whitelist `{"1","true","yes","on"}`; `"0"`, `"false"`, `"no"`, `"off"`, empty string, and any unrecognized string all default-deny. `pkg://` paths skip repo-confinement by construction (any `importlib.resources` target is inside an installed package).
+
+### Guardrails on every custom bundle
+
+1. `yaml.safe_load` only (no tag execution).
+2. Repo-confinement OR explicit trust flag (filesystem paths only).
+3. Whitelisted top-level keys (unknown keys hard-fail).
+4. Placeholder audit — `{captions}` required in `consolidation`; no bare placeholders in `caption`/`color`/`material`.
+5. Size caps: 8 KiB per prompt template, 64 KiB per YAML file.
+6. SHA-256 content hash logged at INFO level for reproducibility.
+
+### Run-header hash log
+
+Every caption stage run emits a single line at INFO level:
+
+```
+[caption] bundle=rich (sha256=da0790e33409a9bd) top_k=5
+```
+
+The hash includes `suggested_top_k` in the canonicalized content, so a changed hint produces a distinct hash. This gives you "which exact bundle produced this caption file" as a one-grep answer six months later.
+
+### CLI tooling
+
+```bash
+python -m semgraph.prompting list            # enumerate registered bundle_ids
+python -m semgraph.prompting show rich       # print resolved bundle content
+python -m semgraph.prompting validate my.yaml  # exit 0 if ok, 1 if errors
+```
+
+The `validate` subcommand runs the same ruleset the stage does, so custom-bundle authoring is a sub-50ms edit/validate loop rather than "run the pipeline, wait 20 minutes, see the error."
+
+### Third-party bundles
+
+Companies / researchers shipping their own prompt packs register via setuptools entry points in their `pyproject.toml`:
+
+```toml
+[project.entry-points."semgraph.prompt_bundles"]
+acme_kitchen = "acme_prompts.bundles:KitchenPromptBundle"
+```
+
+Subclass `semgraph.prompting.base.PromptBundle` and implement `from_cfg(cls, cfg) -> PromptBundle`. Once `pip install`ed, `caption_prompts=acme_kitchen` works unmodified.
+
+Internal bundle IDs (`standard`, `rich`, `compact`, `default`, `custom`) are reserved: a third-party registration on any of them logs a WARNING and the cache slot is overridden with the first-party class (structural preemption, not iteration-order-dependent). A broken third-party plugin does not kill the factory — it is quarantined with a sentinel, and asking specifically for the broken `bundle_id` raises a focused `RuntimeError`.
+
+### Schema versioning
+
+Every bundle YAML carries `schema_version: 1`. Schema v2 will add a `_load_v2` classmethod to the ABC; every internal and third-party bundle already shipped continues to load via `_load_v1`. A YAML declaring a version higher than this build supports fails with `"Upgrade semgraph to read this bundle"` rather than a confusing `KeyError` deep in a loader.
 
 ## Vision Encoder Embedding Extraction
 

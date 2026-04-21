@@ -6,6 +6,7 @@ defaults:
   - classes
   - logging_level
   - prompts_standard
+  - caption_prompts: default
   - _self_
 
 # Segmentation backend override (set via env or leave to base_mapping default)

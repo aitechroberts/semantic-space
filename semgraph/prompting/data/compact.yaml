@@ -1,0 +1,22 @@
+# Compact prompt bundle — short prompts for smaller/faster VLMs.
+#
+# Targets sub-2B VLMs where verbose prompts eat into the context budget.
+# Suggests top_k=3 views to keep per-object latency low; stage remains
+# authoritative about the actual top_k used.
+schema_version: 1
+suggested_top_k: 3
+
+caption: "Name this object in one short noun phrase."
+
+color: "Primary color? One word."
+
+material: "Material? One word."
+
+consolidation: |-
+  Given these short captions of the same object:
+  {captions}
+
+  Return JSON: {{"canonical_tag": "...", "candidate_tags": ["...", ...], "summary": "..."}}
+  canonical_tag: one specific noun phrase.
+  candidate_tags: 2-4 alternatives.
+  summary: one short sentence.

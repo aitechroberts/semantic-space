@@ -1,6 +1,6 @@
 # Architecture
 
-> **Last updated:** 2026-04-10
+> **Last updated:** 2026-04-20
 
 ## Package Layout
 
@@ -28,10 +28,23 @@ semgraph/
         embed.py                # A2/B1: encoder feature extraction
         build_map.py            # A3: incremental map construction
         oracle_finalize.py      # A4: MST edges + HPSG planes
-        caption.py              # B2: per-object VLM captioning
+        caption.py              # B2: per-object VLM captioning (uses PromptBundle)
         semantic_assemble.py    # B3: HPSG JSON assembly
         eval.py                 # B4: classification / QA / retrieval
         postprocess.py          # legacy post-processing
+    prompting/                  # pluggable caption-stage prompt bundles (strategy+factory)
+        __init__.py             # get_prompt_bundle() factory, entry-point discovery, _FailedPlugin sentinel
+        base.py                 # PromptBundle ABC: validate_raw (single SoT), from_yaml, schema-version dispatch, content_sha256
+        _cfg.py                 # _select (struct-mode-safe), _truthy (case-folded whitelist)
+        standard.py             # StandardPromptBundle — baseline prompts
+        rich.py                 # RichPromptBundle — verbose prompts, suggested_top_k=5
+        compact.py              # CompactPromptBundle — short prompts, suggested_top_k=3
+        custom.py               # CustomPromptBundle — user YAML with six guardrails
+        __main__.py             # python -m semgraph.prompting {list, show, validate}
+        data/                   # packaged content YAMLs (source of truth, loaded via importlib.resources)
+            standard.yaml
+            rich.yaml
+            compact.yaml
     slam/
         geometry/               # geometry backends (trajectory, gt_mesh, sparse)
             base.py             # GeometryBackend ABC, FrameContext
@@ -178,7 +191,7 @@ The only pickle in the pipeline is the intermediate `oracle_map.pkl.gz` between 
 - **build_map.py:** Processes frames in sorted order from frame 0 (incremental loop). Missing `frame_data` files are skipped.
 - **oracle_finalize.py:** Requires `map/oracle_map.pkl.gz`. Fails fast if missing. Outputs immutable `oracle_scene.npz+.json`.
 - **embed.py (Phase B):** Requires `oracle/oracle_scene.npz+.json`. Outputs `VariantRecord`.
-- **caption.py:** Requires `oracle/oracle_scene.npz+.json` and a running VLM server. Outputs `CaptionsRecord`.
+- **caption.py:** Requires `oracle/oracle_scene.npz+.json` and a running VLM server. Selects a `PromptBundle` via the `caption_prompts` Hydra config group (defaults to `standard`) and logs a `bundle=<id> (sha256=<16hex>) top_k=<k>` line at INFO level for reproducibility. Outputs `CaptionsRecord`.
 - **semantic_assemble.py:** Requires oracle scene, embed variant, and captions. Outputs HPSG JSON.
 - **eval.py:** Requires `assembled/*/scene_graph.json`. Outputs classification/QA/retrieval JSON.
 
@@ -195,9 +208,13 @@ base.yaml
       -> sam.yaml                # sam_variant
         -> classes.yaml          # classes_file, bg_classes, skip_bg
           -> logging_level.yaml
-            -> prompts_standard.yaml   # VLM prompt templates
-              -> batch_vlm_mapping_api.yaml  # top-level overrides + embed/caption/assemble/eval config groups
+            -> prompts_standard.yaml   # legacy flat-schema prompts (VLMAPIClient ctor arg; batch pipeline)
+              -> caption_prompts/default.yaml   # new PromptBundle pointer (group-member; per-object captioning)
+                -> batch_vlm_mapping_api.yaml   # top-level overrides + embed/caption/assemble/eval config groups
+                  -> _self_                     # user overlay slot
 ```
+
+`prompts_standard.yaml` (root-level) and `caption_prompts/default.yaml` (group-member) coexist on purpose: the former drives the legacy batch pipeline in `semgraph/slam/vlm_run/` via `VLMAPIClient(prompts=...)`, the latter drives the per-object captioning in `semgraph/stages/caption.py` via `get_prompt_bundle()`. They do not share a schema; see [VLLM_API.md § Prompt Bundles](VLLM_API.md#prompt-bundles-per-object-captioning) for the active-stage contract.
 
 ---
 
